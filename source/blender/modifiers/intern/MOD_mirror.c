@@ -68,8 +68,11 @@ static void updateDepsgraph(ModifierData *md, const ModifierUpdateDepsgraphConte
   }
 }
 
-static Mesh *doBiscetOnMirrorPlane(
-    MirrorModifierData *mmd, const Mesh *mesh, int axis, float plane_co[3], float plane_no[3])
+static Mesh *doBiscetOnMirrorPlane(MirrorModifierData *mmd,
+                                   const Mesh *mesh,
+                                   int axis,
+                                   const float plane_co[3],
+                                   float plane_no[3])
 {
   bool do_bisect_flip_axis = ((axis == 0 && mmd->flag & MOD_MIR_BISECT_FLIP_AXIS_X) ||
                               (axis == 1 && mmd->flag & MOD_MIR_BISECT_FLIP_AXIS_Y) ||
@@ -335,7 +338,7 @@ static Mesh *doMirrorOnAxis(MirrorModifierData *mmd,
   }
 
   /* handle custom split normals */
-  if ((((Mesh *)ob->data)->flag & ME_AUTOSMOOTH) &&
+  if (ob->type == OB_MESH && (((Mesh *)ob->data)->flag & ME_AUTOSMOOTH) &&
       CustomData_has_layer(&result->ldata, CD_CUSTOMLOOPNORMAL)) {
     const int totloop = result->totloop;
     const int totpoly = result->totpoly;

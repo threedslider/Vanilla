@@ -1199,9 +1199,14 @@ static void select_moreless_action_keys(bAnimContext *ac, short mode)
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   for (ale = anim_data.first; ale; ale = ale->next) {
-    FCurve *fcu = (FCurve *)ale->key_data;
+
+    /* TODO: other types. */
+    if (ale->datatype != ALE_FCURVE) {
+      continue;
+    }
 
     /* only continue if F-Curve has keyframes */
+    FCurve *fcu = (FCurve *)ale->key_data;
     if (fcu->bezt == NULL) {
       continue;
     }
@@ -1712,22 +1717,26 @@ static void mouse_action_keys(bAnimContext *ac,
 
       /* Highlight GPencil Layer */
       if (ale != NULL && ale->data != NULL && ale->type == ANIMTYPE_GPLAYER) {
+        bGPdata *gpd = (bGPdata *)ale->id;
         bGPDlayer *gpl = ale->data;
 
         gpl->flag |= GP_LAYER_SELECT;
-        // gpencil_layer_setactive(gpd, gpl);
+        /* Update other layer status. */
+        if (BKE_gpencil_layer_getactive(gpd) != gpl) {
+          BKE_gpencil_layer_setactive(gpd, gpl);
+          BKE_gpencil_layer_autolock_set(gpd, false);
+          WM_main_add_notifier(NC_GPENCIL | ND_DATA | NA_EDITED, NULL);
+        }
       }
     }
     else if (ac->datatype == ANIMCONT_MASK) {
       /* deselect all other channels first */
       ANIM_deselect_anim_channels(ac, ac->data, ac->datatype, 0, ACHANNEL_SETFLAG_CLEAR);
 
-      /* Highlight GPencil Layer */
       if (ale != NULL && ale->data != NULL && ale->type == ANIMTYPE_MASKLAYER) {
         MaskLayer *masklay = ale->data;
 
         masklay->flag |= MASK_LAYERFLAG_SELECT;
-        // gpencil_layer_setactive(gpd, gpl);
       }
     }
   }

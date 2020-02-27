@@ -109,14 +109,14 @@ static void draw_current_frame(const Scene *scene,
 
   UI_draw_roundbox_corner_set(UI_CNR_ALL);
 
-  UI_draw_roundbox_3fvAlpha(true,
-                            frame_x - box_width / 2 + U.pixelsize / 2,
-                            scrub_region_rect->ymin + box_padding,
-                            frame_x + box_width / 2 + U.pixelsize / 2,
-                            scrub_region_rect->ymax - box_padding,
-                            4 * UI_DPI_FAC,
-                            bg_color,
-                            1.0f);
+  UI_draw_roundbox_3fv_alpha(true,
+                             frame_x - box_width / 2 + U.pixelsize / 2,
+                             scrub_region_rect->ymin + box_padding,
+                             frame_x + box_width / 2 + U.pixelsize / 2,
+                             scrub_region_rect->ymax - box_padding,
+                             4 * UI_DPI_FAC,
+                             bg_color,
+                             1.0f);
 
   UI_GetThemeColorShade4fv(TH_CFRAME, 5, bg_color);
   UI_draw_roundbox_aa(false,
@@ -179,9 +179,9 @@ void ED_time_scrub_channel_search_draw(const bContext *C, ARegion *ar, bDopeShee
 
   rcti rect;
   rect.xmin = 0;
-  rect.xmax = ceilf(ar->sizex * UI_DPI_FAC);
-  rect.ymin = ar->sizey * UI_DPI_FAC - UI_TIME_SCRUB_MARGIN_Y;
-  rect.ymax = ceilf(ar->sizey * UI_DPI_FAC);
+  rect.xmax = ar->winx;
+  rect.ymin = ar->winy - UI_TIME_SCRUB_MARGIN_Y;
+  rect.ymax = ar->winy;
 
   uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
   immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);

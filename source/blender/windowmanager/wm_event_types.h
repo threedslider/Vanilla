@@ -28,7 +28,6 @@
 
 /* customdata type */
 enum {
-  EVT_DATA_GESTURE = 1,
   EVT_DATA_TIMER = 2,
   EVT_DATA_DRAGDROP = 3,
   EVT_DATA_NDOF_MOTION = 4,
@@ -63,6 +62,8 @@ enum {
   MOUSEPAN = 0x000e,
   MOUSEZOOM = 0x000f,
   MOUSEROTATE = 0x0010,
+  MOUSESMARTZOOM = 0x0017,
+
   /* defaults from ghost */
   WHEELUPMOUSE = 0x000a,
   WHEELDOWNMOUSE = 0x000b,
@@ -223,6 +224,11 @@ enum {
   F17KEY = 0x013c, /* 316 */
   F18KEY = 0x013d, /* 317 */
   F19KEY = 0x013e, /* 318 */
+  F20KEY = 0x013f, /* 319 */
+  F21KEY = 0x0140, /* 320 */
+  F22KEY = 0x0141, /* 321 */
+  F23KEY = 0x0142, /* 322 */
+  F24KEY = 0x0143, /* 323 */
 
   /* *** End of keyboard codes. *** */
 
@@ -347,14 +353,15 @@ enum {
 /* test whether the event is a key on the keyboard */
 #define ISKEYBOARD(event_type) \
   (((event_type) >= 0x0020 && (event_type) <= 0x00ff) || \
-   ((event_type) >= 0x012c && (event_type) <= 0x013f))
+   ((event_type) >= 0x012c && (event_type) <= 0x0143))
 
 /* test whether the event is a modifier key */
 #define ISKEYMODIFIER(event_type) \
   (((event_type) >= LEFTCTRLKEY && (event_type) <= LEFTSHIFTKEY) || (event_type) == OSKEY)
 
 /* test whether the event is a mouse button */
-#define ISMOUSE(event_type) ((event_type) >= LEFTMOUSE && (event_type) <= BUTTON7MOUSE)
+#define ISMOUSE(event_type) \
+  (((event_type) >= LEFTMOUSE && (event_type) <= BUTTON7MOUSE) || (event_type) == MOUSESMARTZOOM)
 
 #define ISMOUSE_WHEEL(event_type) ((event_type) >= WHEELUPMOUSE && (event_type) <= WHEELOUTMOUSE)
 #define ISMOUSE_GESTURE(event_type) ((event_type) >= MOUSEPAN && (event_type) <= MOUSEROTATE)
@@ -435,15 +442,6 @@ enum {
   EVT_GESTURE_SW = 6,
   EVT_GESTURE_W = 7,
   EVT_GESTURE_NW = 8,
-  /* value of corner gestures */
-  EVT_GESTURE_N_E = 9,
-  EVT_GESTURE_N_W = 10,
-  EVT_GESTURE_E_N = 11,
-  EVT_GESTURE_E_S = 12,
-  EVT_GESTURE_S_E = 13,
-  EVT_GESTURE_S_W = 14,
-  EVT_GESTURE_W_S = 15,
-  EVT_GESTURE_W_N = 16,
 };
 
 /* File select */

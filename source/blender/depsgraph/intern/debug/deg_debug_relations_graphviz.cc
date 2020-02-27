@@ -36,6 +36,8 @@ extern "C" {
 #include "DEG_depsgraph_debug.h"
 
 #include "intern/depsgraph.h"
+#include "intern/depsgraph_relation.h"
+
 #include "intern/node/deg_node_component.h"
 #include "intern/node/deg_node_id.h"
 #include "intern/node/deg_node_operation.h"
@@ -426,6 +428,7 @@ static void deg_debug_graphviz_node(const DebugContext &ctx, const Node *node)
     case NodeType::SHADING_PARAMETERS:
     case NodeType::CACHE:
     case NodeType::POINT_CACHE:
+    case NodeType::IMAGE_ANIMATION:
     case NodeType::LAYER_COLLECTIONS:
     case NodeType::PARTICLE_SYSTEM:
     case NodeType::PARTICLE_SETTINGS:
@@ -553,7 +556,7 @@ static void deg_debug_graphviz_graph_nodes(const DebugContext &ctx, const Depsgr
     deg_debug_graphviz_node(ctx, node);
   }
   TimeSourceNode *time_source = graph->find_time_source();
-  if (time_source != NULL) {
+  if (time_source != nullptr) {
     deg_debug_graphviz_node(ctx, time_source);
   }
 }
@@ -570,7 +573,7 @@ static void deg_debug_graphviz_graph_relations(const DebugContext &ctx, const De
   }
 
   TimeSourceNode *time_source = graph->find_time_source();
-  if (time_source != NULL) {
+  if (time_source != nullptr) {
     deg_debug_graphviz_node_relations(ctx, time_source);
   }
 }

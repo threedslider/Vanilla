@@ -1031,7 +1031,7 @@ static void knifetool_draw_angle_snapping(const KnifeTool_OpData *kcd)
   uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
   immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
-  immUniformThemeColor(TH_TRANSFORM);
+  immUniformThemeColor3(TH_TRANSFORM);
   GPU_line_width(2.0);
 
   immBegin(GPU_PRIM_LINES, 2);
@@ -2564,7 +2564,7 @@ static void knifetool_finish_ex(KnifeTool_OpData *kcd)
 
   EDBM_selectmode_flush(kcd->em);
   EDBM_mesh_normals_update(kcd->em);
-  EDBM_update_generic(kcd->em, true, true);
+  EDBM_update_generic(kcd->ob->data, true, true);
 
   /* re-tessellating makes this invalid, dont use again by accident */
   knifetool_free_bmbvh(kcd);

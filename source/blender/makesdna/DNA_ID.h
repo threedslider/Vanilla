@@ -112,24 +112,6 @@ enum {
   IDP_STRING_SUB_BYTE = 1, /* arbitrary byte array, _not_ null terminated */
 };
 
-/* IDP_GROUP */
-enum {
-  /** Default. */
-  IDP_GROUP_SUB_NONE = 0,
-  /** Object mode settings. */
-  IDP_GROUP_SUB_MODE_OBJECT = 1,
-  /** Mesh edit mode settings. */
-  IDP_GROUP_SUB_MODE_EDIT = 2,
-  /** Render engine settings. */
-  IDP_GROUP_SUB_ENGINE_RENDER = 3,
-  /** Data override. */
-  IDP_GROUP_SUB_OVERRIDE = 4,
-  /** Weight paint mode settings. */
-  IDP_GROUP_SUB_MODE_PAINT_WEIGHT = 5,
-  /** Vertex paint mode settings. */
-  IDP_GROUP_SUB_MODE_PAINT_VERTEX = 6,
-};
-
 /*->flag*/
 enum {
   /** This IDProp may be statically overridden.
@@ -457,9 +439,8 @@ typedef enum ID_Type {
   (!ID_IS_LINKED((_id)) && ID_IS_OVERRIDE_LIBRARY((_id)) && \
    (((ID *)(_id))->override_library->flag & OVERRIDE_LIBRARY_AUTO))
 
-/* No copy-on-write for these types.
- * Keep in sync with check_datablocks_copy_on_writable and deg_copy_on_write_is_needed */
-#define ID_TYPE_IS_COW(_id_type) (!ELEM(_id_type, ID_BR, ID_LS, ID_PAL, ID_IM))
+/* Check whether datablock type is covered by copy-on-write. */
+#define ID_TYPE_IS_COW(_id_type) (!ELEM(_id_type, ID_BR, ID_PAL, ID_IM))
 
 #ifdef GS
 #  undef GS

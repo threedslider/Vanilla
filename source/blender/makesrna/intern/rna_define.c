@@ -1832,8 +1832,18 @@ void RNA_def_property_enum_items(PropertyRNA *prop, const EnumPropertyItem *item
       for (i = 0; item[i].identifier; i++) {
         eprop->totitem++;
 
-        if (item[i].identifier[0] && item[i].value == eprop->defaultvalue) {
-          defaultfound = 1;
+        if (item[i].identifier[0]) {
+          if (strstr(item[i].identifier, " ")) {
+            CLOG_ERROR(&LOG,
+                       "\"%s.%s\", enum identifiers must not contain spaces.",
+                       srna->identifier,
+                       prop->identifier);
+            DefRNA.error = 1;
+            break;
+          }
+          else if (item[i].value == eprop->defaultvalue) {
+            defaultfound = 1;
+          }
         }
       }
 
@@ -3884,6 +3894,36 @@ PropertyRNA *RNA_def_float_matrix(StructOrFunctionRNA *cont_,
   }
   RNA_def_property_ui_text(prop, ui_name, ui_description);
   RNA_def_property_ui_range(prop, softmin, softmax, 1, 3);
+
+  return prop;
+}
+
+PropertyRNA *RNA_def_float_translation(StructOrFunctionRNA *cont_,
+                                       const char *identifier,
+                                       int len,
+                                       const float *default_value,
+                                       float hardmin,
+                                       float hardmax,
+                                       const char *ui_name,
+                                       const char *ui_description,
+                                       float softmin,
+                                       float softmax)
+{
+  PropertyRNA *prop;
+
+  prop = RNA_def_float_vector(cont_,
+                              identifier,
+                              len,
+                              default_value,
+                              hardmin,
+                              hardmax,
+                              ui_name,
+                              ui_description,
+                              softmin,
+                              softmax);
+  prop->subtype = PROP_TRANSLATION;
+
+  RNA_def_property_ui_range(prop, softmin, softmax, 1, RNA_TRANSLATION_PREC_DEFAULT);
 
   return prop;
 }

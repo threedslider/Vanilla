@@ -223,6 +223,7 @@ else:
         "aud",
         "bgl",
         "blf",
+        "imbuf",
         "bmesh",
         "bmesh.ops",
         "bmesh.types",
@@ -989,6 +990,7 @@ def pymodule2sphinx(basepath, module_name, module, title):
 # Changes in Blender will force errors here
 context_type_map = {
     # context_member: (RNA type, is_collection)
+    "active_annotation_layer": ("GPencilLayer", False),
     "active_base": ("ObjectBase", False),
     "active_bone": ("EditBone", False),
     "active_gpencil_frame": ("GreasePencilLayer", True),
@@ -998,6 +1000,8 @@ context_type_map = {
     "active_operator": ("Operator", False),
     "active_pose_bone": ("PoseBone", False),
     "active_editable_fcurve": ("FCurve", False),
+    "annotation_data": ("GreasePencil", False),
+    "annotation_data_owner": ("ID", False),
     "armature": ("Armature", False),
     "bone": ("Bone", False),
     "brush": ("Brush", False),
@@ -1776,7 +1780,7 @@ def write_rst_contents(basepath):
 
     standalone_modules = (
         # submodules are added in parent page
-        "mathutils", "freestyle", "bgl", "blf", "gpu", "gpu_extras",
+        "mathutils", "freestyle", "bgl", "blf", "imbuf", "gpu", "gpu_extras",
         "aud", "bpy_extras", "idprop.types", "bmesh",
     )
 
@@ -1883,6 +1887,7 @@ def write_rst_importable_modules(basepath):
         # C_modules
         "aud": "Audio System",
         "blf": "Font Drawing",
+        "imbuf": "Image Buffer",
         "gpu": "GPU Shader Module",
         "gpu.types": "GPU Types",
         "gpu.matrix": "GPU Matrix",

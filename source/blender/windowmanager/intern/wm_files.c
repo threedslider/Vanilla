@@ -77,7 +77,7 @@
 #include "BKE_context.h"
 #include "BKE_global.h"
 #include "BKE_idprop.h"
-#include "BKE_library_override.h"
+#include "BKE_lib_override.h"
 #include "BKE_main.h"
 #include "BKE_packedFile.h"
 #include "BKE_report.h"
@@ -1366,7 +1366,7 @@ static bool wm_file_write(bContext *C, const char *filepath, int fileflags, Repo
   BKE_callback_exec_null(bmain, BKE_CB_EVT_SAVE_PRE);
 
   /* Enforce full override check/generation on file save. */
-  BKE_main_override_library_operations_create(bmain, true);
+  BKE_lib_override_library_main_operations_create(bmain, true);
 
   /* blend file thumbnail */
   /* Save before exit_editmode, otherwise derivedmeshes for shared data corrupt T27765. */
@@ -1386,7 +1386,7 @@ static bool wm_file_write(bContext *C, const char *filepath, int fileflags, Repo
   /* don't forget not to return without! */
   WM_cursor_wait(1);
 
-  ED_editors_flush_edits(bmain, false);
+  ED_editors_flush_edits(bmain);
 
   fileflags |= G_FILE_HISTORY; /* write file history */
 
@@ -1527,7 +1527,7 @@ void wm_autosave_timer(const bContext *C, wmWindowManager *wm, wmTimer *UNUSED(w
     Main *bmain = CTX_data_main(C);
     int fileflags = G.fileflags & ~(G_FILE_COMPRESS | G_FILE_HISTORY);
 
-    ED_editors_flush_edits(bmain, false);
+    ED_editors_flush_edits(bmain);
 
     /* Error reporting into console */
     BLO_write_file(bmain, filepath, fileflags, NULL, NULL);
@@ -1655,7 +1655,7 @@ static int wm_homefile_write_exec(bContext *C, wmOperator *op)
 
   printf("Writing homefile: '%s' ", filepath);
 
-  ED_editors_flush_edits(bmain, false);
+  ED_editors_flush_edits(bmain);
 
   /*  force save as regular blend file */
   fileflags = G.fileflags & ~(G_FILE_COMPRESS | G_FILE_HISTORY);
@@ -2668,7 +2668,7 @@ void WM_OT_save_as_mainfile(wmOperatorType *ot)
                   "relative_remap",
                   true,
                   "Remap Relative",
-                  "Make paths relative when saving to a different directory");
+                  "Remap relative paths when saving to a different directory");
   prop = RNA_def_boolean(
       ot->srna,
       "copy",
@@ -2740,7 +2740,7 @@ void WM_OT_save_mainfile(wmOperatorType *ot)
                   "relative_remap",
                   false,
                   "Remap Relative",
-                  "Make paths relative when saving to a different directory");
+                  "Remap relative paths when saving to a different directory");
 
   prop = RNA_def_boolean(ot->srna, "exit", false, "Exit", "Exit Blender after saving");
   RNA_def_property_flag(prop, PROP_HIDDEN | PROP_SKIP_SAVE);
@@ -2808,7 +2808,7 @@ static uiBlock *block_create_autorun_warning(struct bContext *C,
                                              void *UNUSED(arg1))
 {
   wmWindowManager *wm = CTX_wm_manager(C);
-  uiStyle *style = UI_style_get();
+  uiStyle *style = UI_style_get_dpi();
   uiBlock *block = UI_block_begin(C, ar, "autorun_warning_popup", UI_EMBOSS);
 
   UI_block_flag_enable(
@@ -3067,6 +3067,7 @@ static uiBlock *block_create__close_file_dialog(struct bContext *C, struct ARegi
 
   /* Create dialog */
   uiBlock *block = UI_block_begin(C, ar, close_file_dialog_name, UI_EMBOSS);
+  style = UI_style_get_dpi();
 
   UI_block_flag_enable(
       block, UI_BLOCK_KEEP_OPEN | UI_BLOCK_LOOP | UI_BLOCK_NO_WIN_CLIP | UI_BLOCK_NUMSELECT);

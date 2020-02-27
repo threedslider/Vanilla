@@ -119,13 +119,6 @@ inline bAction *bc_getSceneMaterialAction(Material *ma)
   return (ma->adt && ma->adt->action) ? ma->adt->action : NULL;
 }
 
-inline void bc_setSceneObjectAction(bAction *action, Object *ob)
-{
-  if (ob->adt) {
-    ob->adt->action = action;
-  }
-}
-
 std::string bc_get_action_id(std::string action_name,
                              std::string ob_name,
                              std::string channel_type,
@@ -397,9 +390,10 @@ double bc_get_shininess(Material *ma);
 double bc_get_float_from_shader(bNode *shader, double &ior, std::string nodeid);
 COLLADASW::ColorOrTexture bc_get_cot_from_shader(bNode *shader,
                                                  std::string nodeid,
-                                                 Color &default_color);
+                                                 Color &default_color,
+                                                 bool with_alpha = true);
 
 COLLADASW::ColorOrTexture bc_get_cot(float r, float g, float b, float a);
-COLLADASW::ColorOrTexture bc_get_cot(Color col);
+COLLADASW::ColorOrTexture bc_get_cot(Color col, bool with_alpha = true);
 
 #endif

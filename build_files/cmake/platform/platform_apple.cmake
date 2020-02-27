@@ -132,12 +132,12 @@ if(WITH_FFTW3)
   set(FFTW3_LIBPATH ${FFTW3}/lib)
 endif()
 
-set(PNG_LIBRARIES png)
-set(JPEG_LIBRARIES jpeg)
-
 set(ZLIB /usr)
 set(ZLIB_INCLUDE_DIRS "${ZLIB}/include")
 set(ZLIB_LIBRARIES z bz2)
+
+set(PNG_LIBRARIES png ${ZLIB_LIBRARIES})
+set(JPEG_LIBRARIES jpeg)
 
 set(FREETYPE ${LIBDIR}/freetype)
 set(FREETYPE_INCLUDE_DIRS ${FREETYPE}/include ${FREETYPE}/include/freetype2)
@@ -228,10 +228,6 @@ if(WITH_OPENCOLLADA)
   # set(PCRE ${LIBDIR}/pcre)
   # set(PCRE_LIBPATH ${PCRE}/lib)
   set(PCRE_LIBRARIES pcre)
-  # libxml2 is used
-  # set(EXPAT ${LIBDIR}/expat)
-  # set(EXPAT_LIBPATH ${EXPAT}/lib)
-  set(EXPAT_LIB)
 endif()
 
 if(WITH_SDL)
@@ -385,7 +381,7 @@ if(WITH_CYCLES_OSL)
 endif()
 
 if(WITH_CYCLES_EMBREE)
-  find_package(Embree 3.2.4 REQUIRED)
+  find_package(Embree 3.8.0 REQUIRED)
   set(PLATFORM_LINKFLAGS "${PLATFORM_LINKFLAGS} -Xlinker -stack_size -Xlinker 0x100000")
 endif()
 
@@ -400,21 +396,6 @@ endif()
 
 if(WITH_TBB)
   find_package(TBB)
-endif()
-
-if(NOT WITH_TBB OR NOT TBB_FOUND)
-  if(WITH_OPENIMAGEDENOISE)
-    message(STATUS "TBB not found, disabling OpenImageDenoise")
-    set(WITH_OPENIMAGEDENOISE OFF)
-  endif()
-  if(WITH_OPENVDB)
-    message(STATUS "TBB not found, disabling OpenVDB")
-    set(WITH_OPENVDB OFF)
-  endif()
-  if(WITH_MOD_FLUID)
-    message(STATUS "TBB not found, disabling Fluid modifier")
-    set(WITH_MOD_FLUID OFF)
-  endif()
 endif()
 
 # CMake FindOpenMP doesn't know about AppleClang before 3.12, so provide custom flags.

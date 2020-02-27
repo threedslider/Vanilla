@@ -45,7 +45,7 @@
 #include "BKE_brush.h"
 #include "BKE_colortools.h"
 #include "BKE_layer.h"
-#include "BKE_library.h"
+#include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_mesh.h"
 #include "BKE_node.h"
@@ -207,13 +207,20 @@ static void blo_update_defaults_screen(bScreen *screen,
     }
   }
 
-  /* Show top-bar by default. */
+  /* Show tool-header by default (for most cases at least, hide for others). */
+  const bool hide_image_tool_header = STREQ(workspace_name, "Rendering");
   for (ScrArea *sa = screen->areabase.first; sa; sa = sa->next) {
     for (SpaceLink *sl = sa->spacedata.first; sl; sl = sl->next) {
       ListBase *regionbase = (sl == sa->spacedata.first) ? &sa->regionbase : &sl->regionbase;
+
       for (ARegion *ar = regionbase->first; ar; ar = ar->next) {
         if (ar->regiontype == RGN_TYPE_TOOL_HEADER) {
-          ar->flag &= ~(RGN_FLAG_HIDDEN | RGN_FLAG_HIDDEN_BY_USER);
+          if ((sl->spacetype == SPACE_IMAGE) && hide_image_tool_header) {
+            ar->flag |= RGN_FLAG_HIDDEN;
+          }
+          else {
+            ar->flag &= ~(RGN_FLAG_HIDDEN | RGN_FLAG_HIDDEN_BY_USER);
+          }
         }
       }
     }
@@ -279,7 +286,6 @@ static void blo_update_defaults_scene(Main *bmain, Scene *scene)
   BLI_strncpy(scene->r.engine, RE_engine_id_BLENDER_EEVEE, sizeof(scene->r.engine));
 
   scene->r.cfra = 1.0f;
-  scene->r.displaymode = R_OUTPUT_WINDOW;
 
   /* Don't enable compositing nodes. */
   if (scene->nodetree) {
@@ -528,7 +534,7 @@ void BLO_update_defaults_startup_blend(Main *bmain, const char *app_template)
       brush->sculpt_tool = SCULPT_TOOL_POSE;
     }
 
-    brush_name = "Multiplane Scrape";
+    brush_name = "Multi-plane Scrape";
     brush = BLI_findstring(&bmain->brushes, brush_name, offsetof(ID, name) + 2);
     if (!brush) {
       brush = BKE_brush_add(bmain, brush_name, OB_MODE_SCULPT);

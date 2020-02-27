@@ -316,7 +316,7 @@ static void drawWalkPixel(const struct bContext *UNUSED(C), ARegion *ar, void *a
 
   immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
-  immUniformThemeColor(TH_VIEW_OVERLAY);
+  immUniformThemeColor3(TH_VIEW_OVERLAY);
 
   immBegin(GPU_PRIM_LINES, 8);
 
@@ -676,7 +676,7 @@ static void walkEvent(bContext *C, WalkInfo *walk, const wmEvent *event)
       return;
     }
 
-    if ((walk->is_cursor_absolute == false) && event->is_motion_absolute) {
+    if ((walk->is_cursor_absolute == false) && event->tablet.is_motion_absolute) {
       walk->is_cursor_absolute = true;
       copy_v2_v2_int(walk->prev_mval, event->mval);
       copy_v2_v2_int(walk->center_mval, event->mval);

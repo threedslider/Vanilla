@@ -70,9 +70,10 @@
 #include "BKE_customdata.h"
 #include "BKE_fcurve.h"
 #include "BKE_freestyle.h"
+#include "BKE_global.h"
 #include "BKE_idprop.h"
 #include "BKE_key.h"
-#include "BKE_library.h"
+#include "BKE_lib_id.h"
 #include "BKE_layer.h"
 #include "BKE_main.h"
 #include "BKE_mesh.h"
@@ -636,6 +637,29 @@ static ARegion *do_versions_add_region(int regiontype, const char *name)
   return ar;
 }
 
+static void do_versions_area_ensure_tool_region(Main *bmain,
+                                                const short space_type,
+                                                const short region_flag)
+{
+  for (bScreen *screen = bmain->screens.first; screen; screen = screen->id.next) {
+    for (ScrArea *sa = screen->areabase.first; sa; sa = sa->next) {
+      for (SpaceLink *sl = sa->spacedata.first; sl; sl = sl->next) {
+        if (sl->spacetype == space_type) {
+          ListBase *regionbase = (sl == sa->spacedata.first) ? &sa->regionbase : &sl->regionbase;
+          ARegion *ar = BKE_area_find_region_type(sa, RGN_TYPE_TOOLS);
+          if (!ar) {
+            ARegion *header = BKE_area_find_region_type(sa, RGN_TYPE_HEADER);
+            ar = do_versions_add_region(RGN_TYPE_TOOLS, "tools region");
+            BLI_insertlinkafter(regionbase, header, ar);
+            ar->alignment = RGN_ALIGN_LEFT;
+            ar->flag = region_flag;
+          }
+        }
+      }
+    }
+  }
+}
+
 static void do_version_bones_split_bbone_scale(ListBase *lb)
 {
   for (Bone *bone = lb->first; bone; bone = bone->next) {
@@ -867,6 +891,10 @@ static void do_versions_local_collection_bits_set(LayerCollection *layer_collect
 
 static void do_version_curvemapping_flag_extend_extrapolate(CurveMapping *cumap)
 {
+  if (cumap == NULL) {
+    return;
+  }
+
 #define CUMA_EXTEND_EXTRAPOLATE_OLD 1
   for (int curve_map_index = 0; curve_map_index < 4; curve_map_index++) {
     CurveMap *cuma = &cumap->cm[curve_map_index];
@@ -1034,7 +1062,7 @@ static void do_version_curvemapping_walker(Main *bmain, void (*callback)(CurveMa
 
   /* Free Style */
   LISTBASE_FOREACH (struct FreestyleLineStyle *, linestyle, &bmain->linestyles) {
-    LISTBASE_FOREACH (LineStyleModifier *, m, &linestyle->thickness_modifiers) {
+    LISTBASE_FOREACH (LineStyleModifier *, m, &linestyle->alpha_modifiers) {
       switch (m->type) {
         case LS_MODIFIER_ALONG_STROKE:
           callback(((LineStyleAlphaModifier_AlongStroke *)m)->curve);
@@ -1089,6 +1117,18 @@ static void do_version_curvemapping_walker(Main *bmain, void (*callback)(CurveMa
       }
     }
   }
+}
+
+static void do_version_fcurve_hide_viewport_fix(struct ID *UNUSED(id),
+                                                struct FCurve *fcu,
+                                                void *UNUSED(user_data))
+{
+  if (strcmp(fcu->rna_path, "hide")) {
+    return;
+  }
+
+  MEM_freeN(fcu->rna_path);
+  fcu->rna_path = BLI_strdupn("hide_viewport", 13);
 }
 
 void do_versions_after_linking_280(Main *bmain, ReportList *UNUSED(reports))
@@ -1508,20 +1548,62 @@ void do_versions_after_linking_280(Main *bmain, ReportList *UNUSED(reports))
       }
     }
 
-    {
-      /* Update all ruler layers to set new flag. */
-      LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
-        bGPdata *gpd = scene->gpd;
-        if (gpd == NULL) {
-          continue;
-        }
-        for (bGPDlayer *gpl = gpd->layers.first; gpl; gpl = gpl->next) {
-          if (STREQ(gpl->info, "RulerData3D")) {
-            gpl->flag |= GP_LAYER_IS_RULER;
-            break;
-          }
+    /* Update all ruler layers to set new flag. */
+    LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
+      bGPdata *gpd = scene->gpd;
+      if (gpd == NULL) {
+        continue;
+      }
+      for (bGPDlayer *gpl = gpd->layers.first; gpl; gpl = gpl->next) {
+        if (STREQ(gpl->info, "RulerData3D")) {
+          gpl->flag |= GP_LAYER_IS_RULER;
+          break;
         }
       }
+    }
+
+    /* This versioning could probably be done only on earlier versions, not sure however
+     * which exact version fully deprecated tessfaces, so think we can keep that one here, no
+     * harm to be expected anyway for being over-conservative. */
+    for (Mesh *me = bmain->meshes.first; me != NULL; me = me->id.next) {
+      /*check if we need to convert mfaces to mpolys*/
+      if (me->totface && !me->totpoly) {
+        /* temporarily switch main so that reading from
+         * external CustomData works */
+        Main *gmain = G_MAIN;
+        G_MAIN = bmain;
+
+        BKE_mesh_do_versions_convert_mfaces_to_mpolys(me);
+
+        G_MAIN = gmain;
+      }
+
+      /* Deprecated, only kept for conversion. */
+      BKE_mesh_tessface_clear(me);
+
+      /* Moved from do_versions because we need updated polygons for calculating normals. */
+      if (MAIN_VERSION_OLDER(bmain, 256, 6)) {
+        BKE_mesh_calc_normals(me);
+      }
+    }
+  }
+
+  /**
+   * Versioning code until next subversion bump goes here.
+   *
+   * \note Be sure to check when bumping the version:
+   * - "versioning_userdef.c", #BLO_version_defaults_userpref_blend
+   * - "versioning_userdef.c", #do_versions_theme
+   *
+   * \note Keep this message at the bottom of the function.
+   */
+  {
+    /* Keep this block, even when empty. */
+
+    /* During development of Blender 2.80 the "Object.hide" property was
+     * removed, and reintroduced in 5e968a996a53 as "Object.hide_viewport". */
+    LISTBASE_FOREACH (Object *, ob, &bmain->objects) {
+      BKE_fcurves_id_cb(&ob->id, do_version_fcurve_hide_viewport_fix, NULL);
     }
   }
 }
@@ -2797,6 +2879,35 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
+    /* Files stored pre 2.5 (possibly re-saved with newer versions) may have non-visible
+     * spaces without a header (visible/active ones are properly versioned).
+     * Multiple version patches below assume there's always a header though. So inserting this
+     * patch in-between older ones to add a header when needed.
+     *
+     * From here on it should be fine to assume there always is a header.
+     */
+    if (!MAIN_VERSION_ATLEAST(bmain, 283, 1)) {
+      for (bScreen *screen = bmain->screens.first; screen; screen = screen->id.next) {
+        for (ScrArea *sa = screen->areabase.first; sa; sa = sa->next) {
+          for (SpaceLink *sl = sa->spacedata.first; sl; sl = sl->next) {
+            ListBase *regionbase = (sl == sa->spacedata.first) ? &sa->regionbase : &sl->regionbase;
+            ARegion *ar_header = do_versions_find_region_or_null(regionbase, RGN_TYPE_HEADER);
+
+            if (!ar_header) {
+              /* Headers should always be first in the region list, except if there's also a
+               * tool-header. These were only introduced in later versions though, so should be
+               * fine to always insert headers first. */
+              BLI_assert(!do_versions_find_region_or_null(regionbase, RGN_TYPE_TOOL_HEADER));
+
+              ARegion *ar = do_versions_add_region(RGN_TYPE_HEADER, "header 2.83.1 versioning");
+              ar->alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
+              BLI_addhead(regionbase, ar);
+            }
+          }
+        }
+      }
+    }
+
     for (bScreen *screen = bmain->screens.first; screen; screen = screen->id.next) {
       for (ScrArea *sa = screen->areabase.first; sa; sa = sa->next) {
         for (SpaceLink *sl = sa->spacedata.first; sl; sl = sl->next) {
@@ -3253,7 +3364,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
     }
 
     for (Image *image = bmain->images.first; image; image = image->id.next) {
-      image->flag &= ~(IMA_FLAG_UNUSED_0 | IMA_FLAG_UNUSED_1 | IMA_FLAG_UNUSED_4 |
+      image->flag &= ~(IMA_HIGH_BITDEPTH | IMA_FLAG_UNUSED_1 | IMA_FLAG_UNUSED_4 |
                        IMA_FLAG_UNUSED_6 | IMA_FLAG_UNUSED_8 | IMA_FLAG_UNUSED_15 |
                        IMA_FLAG_UNUSED_16);
     }
@@ -3678,7 +3789,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
           ListBase *regionbase = (sl == sa->spacedata.first) ? &sa->regionbase : &sl->regionbase;
           /* All spaces that use tools must be eventually added. */
           ARegion *ar = NULL;
-          if (ELEM(sl->spacetype, SPACE_VIEW3D, SPACE_IMAGE) &&
+          if (ELEM(sl->spacetype, SPACE_VIEW3D, SPACE_IMAGE, SPACE_SEQ) &&
               ((ar = do_versions_find_region_or_null(regionbase, RGN_TYPE_TOOL_HEADER)) == NULL)) {
             /* Add tool header. */
             ar = do_versions_add_region(RGN_TYPE_TOOL_HEADER, "tool header");
@@ -4147,6 +4258,12 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
         }
       }
     }
+
+    for (Brush *br = bmain->brushes.first; br; br = br->id.next) {
+      if (br->ob_mode & OB_MODE_SCULPT && br->area_radius_factor == 0.0f) {
+        br->area_radius_factor = 0.5f;
+      }
+    }
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 282, 2)) {
@@ -4266,17 +4383,10 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
     }
   }
 
-  /**
-   * Versioning code until next subversion bump goes here.
-   *
-   * \note Be sure to check when bumping the version:
-   * - "versioning_userdef.c", #BLO_version_defaults_userpref_blend
-   * - "versioning_userdef.c", #do_versions_theme
-   *
-   * \note Keep this message at the bottom of the function.
-   */
-  {
-    /* Keep this block, even when empty. */
+  if (!MAIN_VERSION_ATLEAST(bmain, 283, 3)) {
+
+    /* Sequencer Tool region */
+    do_versions_area_ensure_tool_region(bmain, SPACE_SEQ, RGN_FLAG_HIDDEN);
 
     /* Cloth internal springs */
     for (Object *ob = bmain->objects.first; ob; ob = ob->id.next) {
@@ -4318,10 +4428,91 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
-    /* Brush cursor alpha */
     for (Brush *br = bmain->brushes.first; br; br = br->id.next) {
       br->add_col[3] = 0.9f;
       br->sub_col[3] = 0.9f;
     }
+
+    /* Pose brush IK segments. */
+    for (Brush *br = bmain->brushes.first; br; br = br->id.next) {
+      if (br->pose_ik_segments == 0) {
+        br->pose_ik_segments = 1;
+      }
+    }
+
+    /* Pose brush keep anchor point. */
+    for (Brush *br = bmain->brushes.first; br; br = br->id.next) {
+      if (br->sculpt_tool == SCULPT_TOOL_POSE) {
+        br->flag2 |= BRUSH_POSE_IK_ANCHORED;
+      }
+    }
+
+    /* Tip Roundness. */
+    if (!DNA_struct_elem_find(fd->filesdna, "Brush", "float", "tip_roundness")) {
+      for (Brush *br = bmain->brushes.first; br; br = br->id.next) {
+        if (br->ob_mode & OB_MODE_SCULPT && br->sculpt_tool == SCULPT_TOOL_CLAY_STRIPS) {
+          br->tip_roundness = 0.18f;
+        }
+      }
+    }
+
+    /* EEVEE: Cascade shadow bias fix */
+    LISTBASE_FOREACH (Light *, light, &bmain->lights) {
+      if (light->type == LA_SUN) {
+        /* Should be 0.0004 but for practical reason we make it bigger.
+         * Correct factor is scene dependent. */
+        light->bias *= 0.002f;
+      }
+    }
+  }
+
+  if (!MAIN_VERSION_ATLEAST(bmain, 283, 5)) {
+    /* Alembic Transform Cache changed from world to local space. */
+    LISTBASE_FOREACH (Object *, ob, &bmain->objects) {
+      LISTBASE_FOREACH (bConstraint *, con, &ob->constraints) {
+        if (con->type == CONSTRAINT_TYPE_TRANSFORM_CACHE) {
+          con->ownspace = CONSTRAINT_SPACE_LOCAL;
+        }
+      }
+    }
+
+    /* Add 2D transform to UV Warp modifier. */
+    if (!DNA_struct_elem_find(fd->filesdna, "UVWarpModifierData", "float", "scale[2]")) {
+      for (Object *ob = bmain->objects.first; ob; ob = ob->id.next) {
+        for (ModifierData *md = ob->modifiers.first; md; md = md->next) {
+          if (md->type == eModifierType_UVWarp) {
+            UVWarpModifierData *umd = (UVWarpModifierData *)md;
+            copy_v2_fl(umd->scale, 1.0f);
+          }
+        }
+      }
+    }
+
+    /* Add Lookdev blur property. */
+    if (!DNA_struct_elem_find(fd->filesdna, "View3DShading", "float", "studiolight_blur")) {
+      for (bScreen *screen = bmain->screens.first; screen; screen = screen->id.next) {
+        for (ScrArea *sa = screen->areabase.first; sa; sa = sa->next) {
+          for (SpaceLink *sl = sa->spacedata.first; sl; sl = sl->next) {
+            if (sl->spacetype == SPACE_VIEW3D) {
+              View3D *v3d = (View3D *)sl;
+              v3d->shading.studiolight_blur = 0.5f;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Versioning code until next subversion bump goes here.
+   *
+   * \note Be sure to check when bumping the version:
+   * - "versioning_userdef.c", #BLO_version_defaults_userpref_blend
+   * - "versioning_userdef.c", #do_versions_theme
+   *
+   * \note Keep this message at the bottom of the function.
+   */
+  {
+    /* Keep this block, even when empty. */
   }
 }

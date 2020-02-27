@@ -29,6 +29,7 @@
 struct Object;
 struct bContext;
 struct wmKeyConfig;
+struct wmMsgBus;
 struct wmOperatorType;
 
 void ED_keymap_transform(struct wmKeyConfig *keyconf);
@@ -152,6 +153,7 @@ int BIF_countTransformOrientation(const struct bContext *C);
 #define P_GPENCIL_EDIT (1 << 13)
 #define P_CURSOR_EDIT (1 << 14)
 #define P_CLNOR_INVALIDATE (1 << 15)
+#define P_MOUSE (1 << 16)
 
 void Transform_Properties(struct wmOperatorType *ot, int flags);
 
@@ -165,28 +167,11 @@ void VIEW3D_GGT_xform_shear(struct wmGizmoGroupType *gzgt);
 /* *** transform_gizmo_extrude_3d.c *** */
 void VIEW3D_GGT_xform_extrude(struct wmGizmoGroupType *gzgt);
 
-/* Transform: Axis/Cage */
-bool ED_widgetgroup_gizmo2d_xform_poll(const struct bContext *C, struct wmGizmoGroupType *gzgt);
-void ED_widgetgroup_gizmo2d_xform_setup(const struct bContext *C, struct wmGizmoGroup *gzgroup);
-void ED_widgetgroup_gizmo2d_xform_setup_no_cage(const struct bContext *C,
-                                                struct wmGizmoGroup *gzgroup);
-void ED_widgetgroup_gizmo2d_xform_refresh(const struct bContext *C, struct wmGizmoGroup *gzgroup);
-void ED_widgetgroup_gizmo2d_xform_draw_prepare(const struct bContext *C,
-                                               struct wmGizmoGroup *gzgroup);
-
-/* Resize: Axis */
-bool ED_widgetgroup_gizmo2d_resize_poll(const struct bContext *C, struct wmGizmoGroupType *gzgt);
-void ED_widgetgroup_gizmo2d_resize_setup(const struct bContext *C, struct wmGizmoGroup *gzgroup);
-void ED_widgetgroup_gizmo2d_resize_refresh(const struct bContext *C, struct wmGizmoGroup *gzgroup);
-void ED_widgetgroup_gizmo2d_resize_draw_prepare(const struct bContext *C,
-                                                struct wmGizmoGroup *gzgroup);
-
-/* Rotate: Axis */
-bool ED_widgetgroup_gizmo2d_rotate_poll(const struct bContext *C, struct wmGizmoGroupType *gzgt);
-void ED_widgetgroup_gizmo2d_rotate_setup(const struct bContext *C, struct wmGizmoGroup *gzgroup);
-void ED_widgetgroup_gizmo2d_rotate_refresh(const struct bContext *C, struct wmGizmoGroup *gzgroup);
-void ED_widgetgroup_gizmo2d_rotate_draw_prepare(const struct bContext *C,
-                                                struct wmGizmoGroup *gzgroup);
+/* Generic 2D transform gizmo callback assignment. */
+void ED_widgetgroup_gizmo2d_xform_callbacks_set(struct wmGizmoGroupType *gzgt);
+void ED_widgetgroup_gizmo2d_xform_no_cage_callbacks_set(struct wmGizmoGroupType *gzgt);
+void ED_widgetgroup_gizmo2d_resize_callbacks_set(struct wmGizmoGroupType *gzgt);
+void ED_widgetgroup_gizmo2d_rotate_callbacks_set(struct wmGizmoGroupType *gzgt);
 
 #define SNAP_INCREMENTAL_ANGLE DEG2RAD(5.0)
 

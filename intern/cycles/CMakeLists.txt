@@ -1,3 +1,17 @@
+# Copyright 2011-2020 Blender Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Standalone or with Blender
 if(NOT WITH_BLENDER AND WITH_CYCLES_STANDALONE)
   set(CYCLES_INSTALL_PATH "")
@@ -33,6 +47,22 @@ if(WITH_CYCLES_NATIVE_ONLY)
   if(NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
     set(CYCLES_KERNEL_FLAGS "-march=native")
+  else()
+    if(NOT MSVC_NATIVE_ARCH_FLAGS)
+        TRY_RUN(
+            arch_run_result
+            arch_compile_result
+            ${CMAKE_CURRENT_BINARY_DIR}/
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/msvc_arch_flags.c
+            COMPILE_OUTPUT_VARIABLE arch_compile_output
+            RUN_OUTPUT_VARIABLE arch_run_output
+        )
+        if(arch_compile_result AND "${arch_run_result}" EQUAL "0")
+            string(STRIP ${arch_run_output} arch_run_output)
+            set(MSVC_NATIVE_ARCH_FLAGS ${arch_run_output} CACHE STRING "MSVC Native architecture flags")
+        endif()
+    endif()
+    set(CYCLES_KERNEL_FLAGS "${MSVC_NATIVE_ARCH_FLAGS}")
   endif()
 elseif(NOT WITH_CPU_SSE)
   set(CXX_HAS_SSE FALSE)
@@ -177,14 +207,11 @@ if(CXX_HAS_AVX2)
   add_definitions(-DWITH_KERNEL_AVX2)
 endif()
 
-if(WITH_CYCLES_OSL)
-  # LLVM and OSL need to build without RTTI
-  if(WIN32 AND MSVC)
-    set(RTTI_DISABLE_FLAGS "/GR- -DBOOST_NO_RTTI -DBOOST_NO_TYPEID")
-  elseif(CMAKE_COMPILER_IS_GNUCC OR (CMAKE_C_COMPILER_ID MATCHES "Clang"))
-    set(RTTI_DISABLE_FLAGS "-fno-rtti -DBOOST_NO_RTTI -DBOOST_NO_TYPEID")
-  endif()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${RTTI_DISABLE_FLAGS}")
+# LLVM and OSL need to build without RTTI
+if(WIN32 AND MSVC)
+  set(RTTI_DISABLE_FLAGS "/GR- -DBOOST_NO_RTTI -DBOOST_NO_TYPEID")
+elseif(CMAKE_COMPILER_IS_GNUCC OR (CMAKE_C_COMPILER_ID MATCHES "Clang"))
+  set(RTTI_DISABLE_FLAGS "-fno-rtti -DBOOST_NO_RTTI -DBOOST_NO_TYPEID")
 endif()
 
 # Definitions and Includes
@@ -243,11 +270,19 @@ if(WITH_CYCLES_EMBREE)
   )
 endif()
 
+if(WITH_NANOVDB)
+  add_definitions(-DWITH_NANOVDB)
+  include_directories(
+    SYSTEM
+    ${NANOVDB_INCLUDE_DIR}
+  )
+endif()
+
 if(WITH_OPENSUBDIV)
   add_definitions(-DWITH_OPENSUBDIV)
   include_directories(
     SYSTEM
-    ${OPENSUBDIV_INCLUDE_DIR}
+    ${OPENSUBDIV_INCLUDE_DIRS}
   )
 endif()
 
@@ -289,6 +324,7 @@ include_directories(
   ${OPENEXR_INCLUDE_DIR}
   ${OPENEXR_INCLUDE_DIRS}
   ${PUGIXML_INCLUDE_DIR}
+  ${TBB_INCLUDE_DIRS}
 )
 
 if(CYCLES_STANDALONE_REPOSITORY)
@@ -316,9 +352,7 @@ if(WITH_CYCLES_CUDA_BINARIES AND (NOT WITH_CYCLES_CUBIN_COMPILER))
       set(MAX_MSVC 1910)
     elseif(${CUDA_VERSION} EQUAL "9.1")
       set(MAX_MSVC 1911)
-    elseif(${CUDA_VERSION} EQUAL "10.0")
-      set(MAX_MSVC 1999)
-    elseif(${CUDA_VERSION} EQUAL "10.1")
+    elseif(${CUDA_VERSION} VERSION_GREATER_EQUAL 10.0)
       set(MAX_MSVC 1999)
     endif()
     if(NOT MSVC_VERSION LESS ${MAX_MSVC} OR CMAKE_C_COMPILER_ID MATCHES "Clang")
@@ -335,7 +369,7 @@ if(WITH_CYCLES_CUDA_BINARIES AND (NOT WITH_CYCLES_CUBIN_COMPILER))
 endif()
 
 # NVRTC gives wrong rendering result in CUDA 10.0, so we must use NVCC.
-if(WITH_CYCLES_CUDA_BINARIES AND WITH_CYCLES_CUBIN_COMPILER)
+if(WITH_CYCLES_CUDA_BINARIES AND WITH_CYCLES_CUBIN_COMPILER AND NOT WITH_CYCLES_CUBIN_COMPILER_OVERRRIDE)
   if(NOT (${CUDA_VERSION} VERSION_LESS 10.0))
     message(STATUS "cycles_cubin_cc not supported for CUDA 10.0+, using nvcc instead.")
     set(WITH_CYCLES_CUBIN_COMPILER OFF)
@@ -351,17 +385,6 @@ endif()
 
 if(WITH_CYCLES_NETWORK)
   add_definitions(-DWITH_NETWORK)
-endif()
-
-if(WITH_OPENCOLORIO)
-  add_definitions(-DWITH_OCIO)
-  include_directories(
-    SYSTEM
-    ${OPENCOLORIO_INCLUDE_DIRS}
-  )
-  if(WIN32)
-    add_definitions(-DOpenColorIO_STATIC)
-  endif()
 endif()
 
 if(WITH_CYCLES_STANDALONE OR WITH_CYCLES_NETWORK OR WITH_CYCLES_CUBIN_COMPILER)

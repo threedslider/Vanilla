@@ -22,12 +22,12 @@
  */
 
 #include "DNA_gpencil_types.h"
-#include "DNA_mesh_types.h"
+#include "DNA_image_types.h"
 #include "DNA_mask_types.h"
+#include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
-#include "DNA_image_types.h"
 
 #include "MEM_guardedalloc.h"
 
@@ -59,38 +59,38 @@
 #include "ED_mesh.h"
 #include "ED_node.h"
 #include "ED_render.h"
-#include "ED_space_api.h"
 #include "ED_screen.h"
-#include "ED_uvedit.h"
+#include "ED_space_api.h"
 #include "ED_transform.h"
+#include "ED_uvedit.h"
 
 #include "WM_api.h"
-#include "WM_types.h"
 #include "WM_message.h"
+#include "WM_types.h"
 
-#include "UI_resources.h"
 #include "UI_interface.h"
+#include "UI_resources.h"
 #include "UI_view2d.h"
 
-#include "image_intern.h"
-#include "GPU_framebuffer.h"
 #include "GPU_batch_presets.h"
+#include "GPU_framebuffer.h"
 #include "GPU_viewport.h"
 
-/* TODO(fclem) remove bad level calls */
-#include "../draw/DRW_engine.h"
-#include "wm_draw.h"
+#include "DRW_engine.h"
+#include "DRW_engine_types.h"
+
+#include "image_intern.h"
 
 /**************************** common state *****************************/
 
-static void image_scopes_tag_refresh(ScrArea *sa)
+static void image_scopes_tag_refresh(ScrArea *area)
 {
-  SpaceImage *sima = (SpaceImage *)sa->spacedata.first;
-  ARegion *ar;
+  SpaceImage *sima = (SpaceImage *)area->spacedata.first;
+  ARegion *region;
 
   /* only while histogram is visible */
-  for (ar = sa->regionbase.first; ar; ar = ar->next) {
-    if (ar->regiontype == RGN_TYPE_TOOL_PROPS && ar->flag & RGN_FLAG_HIDDEN) {
+  for (region = area->regionbase.first; region; region = region->next) {
+    if (region->regiontype == RGN_TYPE_TOOL_PROPS && region->flag & RGN_FLAG_HIDDEN) {
       return;
     }
   }
@@ -117,9 +117,9 @@ static void image_user_refresh_scene(const bContext *C, SpaceImage *sima)
 
 /* ******************** default callbacks for image space ***************** */
 
-static SpaceLink *image_new(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
+static SpaceLink *image_create(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
 {
-  ARegion *ar;
+  ARegion *region;
   SpaceImage *simage;
 
   simage = MEM_callocN(sizeof(SpaceImage), "initimage");
@@ -127,6 +127,8 @@ static SpaceLink *image_new(const ScrArea *UNUSED(area), const Scene *UNUSED(sce
   simage->zoom = 1.0f;
   simage->lock = true;
   simage->flag = SI_SHOW_GPENCIL | SI_USE_ALPHA | SI_COORDFLOATS;
+  simage->uv_opacity = 1.0f;
+  simage->overlay.flag = SI_OVERLAY_SHOW_OVERLAYS;
 
   BKE_imageuser_default(&simage->iuser);
   simage->iuser.flag = IMA_SHOW_STEREO | IMA_ANIM_ALWAYS;
@@ -138,41 +140,41 @@ static SpaceLink *image_new(const ScrArea *UNUSED(area), const Scene *UNUSED(sce
   simage->tile_grid_shape[1] = 1;
 
   /* tool header */
-  ar = MEM_callocN(sizeof(ARegion), "tool header for image");
+  region = MEM_callocN(sizeof(ARegion), "tool header for image");
 
-  BLI_addtail(&simage->regionbase, ar);
-  ar->regiontype = RGN_TYPE_TOOL_HEADER;
-  ar->alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
-  ar->flag = RGN_FLAG_HIDDEN | RGN_FLAG_HIDDEN_BY_USER;
+  BLI_addtail(&simage->regionbase, region);
+  region->regiontype = RGN_TYPE_TOOL_HEADER;
+  region->alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
+  region->flag = RGN_FLAG_HIDDEN | RGN_FLAG_HIDDEN_BY_USER;
 
   /* header */
-  ar = MEM_callocN(sizeof(ARegion), "header for image");
+  region = MEM_callocN(sizeof(ARegion), "header for image");
 
-  BLI_addtail(&simage->regionbase, ar);
-  ar->regiontype = RGN_TYPE_HEADER;
-  ar->alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
+  BLI_addtail(&simage->regionbase, region);
+  region->regiontype = RGN_TYPE_HEADER;
+  region->alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
 
   /* buttons/list view */
-  ar = MEM_callocN(sizeof(ARegion), "buttons for image");
+  region = MEM_callocN(sizeof(ARegion), "buttons for image");
 
-  BLI_addtail(&simage->regionbase, ar);
-  ar->regiontype = RGN_TYPE_UI;
-  ar->alignment = RGN_ALIGN_RIGHT;
-  ar->flag = RGN_FLAG_HIDDEN;
+  BLI_addtail(&simage->regionbase, region);
+  region->regiontype = RGN_TYPE_UI;
+  region->alignment = RGN_ALIGN_RIGHT;
+  region->flag = RGN_FLAG_HIDDEN;
 
   /* scopes/uv sculpt/paint */
-  ar = MEM_callocN(sizeof(ARegion), "buttons for image");
+  region = MEM_callocN(sizeof(ARegion), "buttons for image");
 
-  BLI_addtail(&simage->regionbase, ar);
-  ar->regiontype = RGN_TYPE_TOOLS;
-  ar->alignment = RGN_ALIGN_LEFT;
-  ar->flag = RGN_FLAG_HIDDEN;
+  BLI_addtail(&simage->regionbase, region);
+  region->regiontype = RGN_TYPE_TOOLS;
+  region->alignment = RGN_ALIGN_LEFT;
+  region->flag = RGN_FLAG_HIDDEN;
 
   /* main area */
-  ar = MEM_callocN(sizeof(ARegion), "main area for image");
+  region = MEM_callocN(sizeof(ARegion), "main area for image");
 
-  BLI_addtail(&simage->regionbase, ar);
-  ar->regiontype = RGN_TYPE_WINDOW;
+  BLI_addtail(&simage->regionbase, region);
+  region->regiontype = RGN_TYPE_WINDOW;
 
   return (SpaceLink *)simage;
 }
@@ -186,12 +188,12 @@ static void image_free(SpaceLink *sl)
 }
 
 /* spacetype; init callback, add handlers */
-static void image_init(struct wmWindowManager *UNUSED(wm), ScrArea *sa)
+static void image_init(struct wmWindowManager *UNUSED(wm), ScrArea *area)
 {
   ListBase *lb = WM_dropboxmap_find("Image", SPACE_IMAGE, 0);
 
   /* add drop boxes */
-  WM_event_add_dropbox_handler(&sa->handlers, lb);
+  WM_event_add_dropbox_handler(&area->handlers, lb);
 }
 
 static SpaceLink *image_duplicate(SpaceLink *sl)
@@ -262,18 +264,22 @@ static void image_keymap(struct wmKeyConfig *keyconf)
 }
 
 /* dropboxes */
-static bool image_drop_poll(bContext *UNUSED(C),
+static bool image_drop_poll(bContext *C,
                             wmDrag *drag,
-                            const wmEvent *UNUSED(event),
-                            const char **UNUSED(tooltip))
+                            const wmEvent *event,
+                            const char **UNUSED(r_tooltip))
 {
+  ScrArea *area = CTX_wm_area(C);
+  if (ED_region_overlap_isect_any_xy(area, &event->x)) {
+    return false;
+  }
   if (drag->type == WM_DRAG_PATH) {
     /* rule might not work? */
     if (ELEM(drag->icon, 0, ICON_FILE_IMAGE, ICON_FILE_MOVIE, ICON_FILE_BLANK)) {
-      return 1;
+      return true;
     }
   }
-  return 0;
+  return false;
 }
 
 static void image_drop_copy(wmDrag *drag, wmDropBox *drop)
@@ -294,10 +300,10 @@ static void image_dropboxes(void)
  * \note take care not to get into feedback loop here,
  *       calling composite job causes viewer to refresh.
  */
-static void image_refresh(const bContext *C, ScrArea *sa)
+static void image_refresh(const bContext *C, ScrArea *area)
 {
   Scene *scene = CTX_data_scene(C);
-  SpaceImage *sima = sa->spacedata.first;
+  SpaceImage *sima = area->spacedata.first;
   Image *ima;
 
   ima = ED_space_image(sima);
@@ -314,79 +320,78 @@ static void image_refresh(const bContext *C, ScrArea *sa)
   }
 }
 
-static void image_listener(wmWindow *win, ScrArea *sa, wmNotifier *wmn, Scene *UNUSED(scene))
+static void image_listener(wmWindow *win, ScrArea *area, wmNotifier *wmn, Scene *UNUSED(scene))
 {
-  SpaceImage *sima = (SpaceImage *)sa->spacedata.first;
+  SpaceImage *sima = (SpaceImage *)area->spacedata.first;
 
   /* context changes */
   switch (wmn->category) {
     case NC_WINDOW:
       /* notifier comes from editing color space */
-      image_scopes_tag_refresh(sa);
-      ED_area_tag_redraw(sa);
+      image_scopes_tag_refresh(area);
+      ED_area_tag_redraw(area);
       break;
     case NC_SCENE:
       switch (wmn->data) {
         case ND_FRAME:
-          image_scopes_tag_refresh(sa);
-          ED_area_tag_refresh(sa);
-          ED_area_tag_redraw(sa);
+          image_scopes_tag_refresh(area);
+          ED_area_tag_refresh(area);
+          ED_area_tag_redraw(area);
           break;
         case ND_MODE:
           if (wmn->subtype == NS_EDITMODE_MESH) {
-            ED_area_tag_refresh(sa);
+            ED_area_tag_refresh(area);
           }
-          ED_area_tag_redraw(sa);
+          ED_area_tag_redraw(area);
           break;
         case ND_RENDER_RESULT:
         case ND_RENDER_OPTIONS:
         case ND_COMPO_RESULT:
           if (ED_space_image_show_render(sima)) {
-            image_scopes_tag_refresh(sa);
+            image_scopes_tag_refresh(area);
           }
-          ED_area_tag_redraw(sa);
+          ED_area_tag_redraw(area);
           break;
       }
       break;
     case NC_IMAGE:
       if (wmn->reference == sima->image || !wmn->reference) {
         if (wmn->action != NA_PAINTING) {
-          image_scopes_tag_refresh(sa);
-          ED_area_tag_refresh(sa);
-          ED_area_tag_redraw(sa);
+          image_scopes_tag_refresh(area);
+          ED_area_tag_refresh(area);
+          ED_area_tag_redraw(area);
         }
       }
       break;
     case NC_SPACE:
       if (wmn->data == ND_SPACE_IMAGE) {
-        image_scopes_tag_refresh(sa);
-        ED_area_tag_redraw(sa);
+        image_scopes_tag_refresh(area);
+        ED_area_tag_redraw(area);
       }
       break;
     case NC_MASK: {
-      // Scene *scene = wmn->window->screen->scene;
-      /* ideally would check for: ED_space_image_check_show_maskedit(scene, sima)
-       * but we cant get the scene */
-      if (sima->mode == SI_MODE_MASK) {
+      ViewLayer *view_layer = WM_window_get_active_view_layer(win);
+      Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+      if (ED_space_image_check_show_maskedit(sima, obedit)) {
         switch (wmn->data) {
           case ND_SELECT:
-            ED_area_tag_redraw(sa);
+            ED_area_tag_redraw(area);
             break;
           case ND_DATA:
           case ND_DRAW:
             /* causes node-recalc */
-            ED_area_tag_redraw(sa);
-            ED_area_tag_refresh(sa);
+            ED_area_tag_redraw(area);
+            ED_area_tag_refresh(area);
             break;
         }
         switch (wmn->action) {
           case NA_SELECTED:
-            ED_area_tag_redraw(sa);
+            ED_area_tag_redraw(area);
             break;
           case NA_EDITED:
             /* causes node-recalc */
-            ED_area_tag_redraw(sa);
-            ED_area_tag_refresh(sa);
+            ED_area_tag_redraw(area);
+            ED_area_tag_refresh(area);
             break;
         }
       }
@@ -396,9 +401,9 @@ static void image_listener(wmWindow *win, ScrArea *sa, wmNotifier *wmn, Scene *U
       switch (wmn->data) {
         case ND_DATA:
         case ND_SELECT:
-          image_scopes_tag_refresh(sa);
-          ED_area_tag_refresh(sa);
-          ED_area_tag_redraw(sa);
+          image_scopes_tag_refresh(area);
+          ED_area_tag_refresh(area);
+          ED_area_tag_redraw(area);
           break;
       }
       break;
@@ -411,8 +416,8 @@ static void image_listener(wmWindow *win, ScrArea *sa, wmNotifier *wmn, Scene *U
           Object *ob = OBACT(view_layer);
           if (ob && (ob == wmn->reference) && (ob->mode & OB_MODE_EDIT)) {
             if (sima->lock && (sima->flag & SI_DRAWSHADOW)) {
-              ED_area_tag_refresh(sa);
-              ED_area_tag_redraw(sa);
+              ED_area_tag_refresh(area);
+              ED_area_tag_redraw(area);
             }
           }
           break;
@@ -423,14 +428,14 @@ static void image_listener(wmWindow *win, ScrArea *sa, wmNotifier *wmn, Scene *U
     }
     case NC_ID: {
       if (wmn->action == NA_RENAME) {
-        ED_area_tag_redraw(sa);
+        ED_area_tag_redraw(area);
       }
       break;
     }
     case NC_WM:
       if (wmn->data == ND_UNDO) {
-        ED_area_tag_redraw(sa);
-        ED_area_tag_refresh(sa);
+        ED_area_tag_redraw(area);
+        ED_area_tag_refresh(area);
       }
       break;
   }
@@ -438,25 +443,28 @@ static void image_listener(wmWindow *win, ScrArea *sa, wmNotifier *wmn, Scene *U
 
 const char *image_context_dir[] = {"edit_image", "edit_mask", NULL};
 
-static int image_context(const bContext *C, const char *member, bContextDataResult *result)
+static int /*eContextResult*/ image_context(const bContext *C,
+                                            const char *member,
+                                            bContextDataResult *result)
 {
   SpaceImage *sima = CTX_wm_space_image(C);
 
   if (CTX_data_dir(member)) {
     CTX_data_dir_set(result, image_context_dir);
+    /* TODO(sybren): return CTX_RESULT_OK; */
   }
   else if (CTX_data_equals(member, "edit_image")) {
     CTX_data_id_pointer_set(result, (ID *)ED_space_image(sima));
-    return 1;
+    return CTX_RESULT_OK;
   }
   else if (CTX_data_equals(member, "edit_mask")) {
     Mask *mask = ED_space_image_get_mask(sima);
     if (mask) {
       CTX_data_id_pointer_set(result, &mask->id);
     }
-    return true;
+    return CTX_RESULT_OK;
   }
-  return 0;
+  return CTX_RESULT_MEMBER_NOT_FOUND;
 }
 
 static void IMAGE_GGT_gizmo2d(wmGizmoGroupType *gzgt)
@@ -536,7 +544,7 @@ static void image_widgets(void)
 /************************** main region ***************************/
 
 /* sets up the fields of the View2D from zoom and offset */
-static void image_main_region_set_view2d(SpaceImage *sima, ARegion *ar)
+static void image_main_region_set_view2d(SpaceImage *sima, ARegion *region)
 {
   Image *ima = ED_space_image(sima);
 
@@ -550,159 +558,128 @@ static void image_main_region_set_view2d(SpaceImage *sima, ARegion *ar)
     h *= ima->aspy / ima->aspx;
   }
 
-  int winx = BLI_rcti_size_x(&ar->winrct) + 1;
-  int winy = BLI_rcti_size_y(&ar->winrct) + 1;
+  int winx = BLI_rcti_size_x(&region->winrct) + 1;
+  int winy = BLI_rcti_size_y(&region->winrct) + 1;
 
   /* For region overlap, move center so image doesn't overlap header. */
-  const rcti *visible_rect = ED_region_visible_rect(ar);
+  const rcti *visible_rect = ED_region_visible_rect(region);
   const int visible_winy = BLI_rcti_size_y(visible_rect) + 1;
   int visible_centerx = 0;
   int visible_centery = visible_rect->ymin + (visible_winy - winy) / 2;
 
-  ar->v2d.tot.xmin = 0;
-  ar->v2d.tot.ymin = 0;
-  ar->v2d.tot.xmax = w;
-  ar->v2d.tot.ymax = h;
+  region->v2d.tot.xmin = 0;
+  region->v2d.tot.ymin = 0;
+  region->v2d.tot.xmax = w;
+  region->v2d.tot.ymax = h;
 
-  ar->v2d.mask.xmin = ar->v2d.mask.ymin = 0;
-  ar->v2d.mask.xmax = winx;
-  ar->v2d.mask.ymax = winy;
+  region->v2d.mask.xmin = region->v2d.mask.ymin = 0;
+  region->v2d.mask.xmax = winx;
+  region->v2d.mask.ymax = winy;
 
   /* which part of the image space do we see? */
-  float x1 = ar->winrct.xmin + visible_centerx + (winx - sima->zoom * w) / 2.0f;
-  float y1 = ar->winrct.ymin + visible_centery + (winy - sima->zoom * h) / 2.0f;
+  float x1 = region->winrct.xmin + visible_centerx + (winx - sima->zoom * w) / 2.0f;
+  float y1 = region->winrct.ymin + visible_centery + (winy - sima->zoom * h) / 2.0f;
 
   x1 -= sima->zoom * sima->xof;
   y1 -= sima->zoom * sima->yof;
 
   /* relative display right */
-  ar->v2d.cur.xmin = ((ar->winrct.xmin - (float)x1) / sima->zoom);
-  ar->v2d.cur.xmax = ar->v2d.cur.xmin + ((float)winx / sima->zoom);
+  region->v2d.cur.xmin = ((region->winrct.xmin - (float)x1) / sima->zoom);
+  region->v2d.cur.xmax = region->v2d.cur.xmin + ((float)winx / sima->zoom);
 
   /* relative display left */
-  ar->v2d.cur.ymin = ((ar->winrct.ymin - (float)y1) / sima->zoom);
-  ar->v2d.cur.ymax = ar->v2d.cur.ymin + ((float)winy / sima->zoom);
+  region->v2d.cur.ymin = ((region->winrct.ymin - (float)y1) / sima->zoom);
+  region->v2d.cur.ymax = region->v2d.cur.ymin + ((float)winy / sima->zoom);
 
   /* normalize 0.0..1.0 */
-  ar->v2d.cur.xmin /= w;
-  ar->v2d.cur.xmax /= w;
-  ar->v2d.cur.ymin /= h;
-  ar->v2d.cur.ymax /= h;
+  region->v2d.cur.xmin /= w;
+  region->v2d.cur.xmax /= w;
+  region->v2d.cur.ymin /= h;
+  region->v2d.cur.ymax /= h;
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void image_main_region_init(wmWindowManager *wm, ARegion *ar)
+static void image_main_region_init(wmWindowManager *wm, ARegion *region)
 {
   wmKeyMap *keymap;
 
-  // image space manages own v2d
-  // UI_view2d_region_reinit(&ar->v2d, V2D_COMMONVIEW_STANDARD, ar->winx, ar->winy);
+  /* Image space manages own v2d. */
+  // UI_view2d_region_reinit(&region->v2d, V2D_COMMONVIEW_STANDARD, region->winx, region->winy);
 
   /* mask polls mode */
   keymap = WM_keymap_ensure(wm->defaultconf, "Mask Editing", 0, 0);
-  WM_event_add_keymap_handler_v2d_mask(&ar->handlers, keymap);
+  WM_event_add_keymap_handler_v2d_mask(&region->handlers, keymap);
 
   /* image paint polls for mode */
   keymap = WM_keymap_ensure(wm->defaultconf, "Curve", 0, 0);
-  WM_event_add_keymap_handler_v2d_mask(&ar->handlers, keymap);
+  WM_event_add_keymap_handler_v2d_mask(&region->handlers, keymap);
 
   keymap = WM_keymap_ensure(wm->defaultconf, "Paint Curve", 0, 0);
-  WM_event_add_keymap_handler(&ar->handlers, keymap);
+  WM_event_add_keymap_handler(&region->handlers, keymap);
 
   keymap = WM_keymap_ensure(wm->defaultconf, "Image Paint", 0, 0);
-  WM_event_add_keymap_handler_v2d_mask(&ar->handlers, keymap);
+  WM_event_add_keymap_handler_v2d_mask(&region->handlers, keymap);
 
   keymap = WM_keymap_ensure(wm->defaultconf, "UV Editor", 0, 0);
-  WM_event_add_keymap_handler(&ar->handlers, keymap);
+  WM_event_add_keymap_handler(&region->handlers, keymap);
 
   /* own keymaps */
   keymap = WM_keymap_ensure(wm->defaultconf, "Image Generic", SPACE_IMAGE, 0);
-  WM_event_add_keymap_handler(&ar->handlers, keymap);
+  WM_event_add_keymap_handler(&region->handlers, keymap);
   keymap = WM_keymap_ensure(wm->defaultconf, "Image", SPACE_IMAGE, 0);
-  WM_event_add_keymap_handler_v2d_mask(&ar->handlers, keymap);
+  WM_event_add_keymap_handler_v2d_mask(&region->handlers, keymap);
 }
 
-static void image_main_region_draw(const bContext *C, ARegion *ar)
+static void image_main_region_draw(const bContext *C, ARegion *region)
 {
   /* draw entirely, view changes should be handled here */
   SpaceImage *sima = CTX_wm_space_image(C);
-  Object *obact = CTX_data_active_object(C);
   Object *obedit = CTX_data_edit_object(C);
   Depsgraph *depsgraph = CTX_data_expect_evaluated_depsgraph(C);
   Mask *mask = NULL;
-  bool show_uvedit = false;
-  bool show_curve = false;
   Scene *scene = CTX_data_scene(C);
-  ViewLayer *view_layer = CTX_data_view_layer(C);
-  View2D *v2d = &ar->v2d;
-  // View2DScrollers *scrollers;
-  float col[3];
-
-  /* XXX This is in order to draw UI batches with the DRW
-   * old context since we now use it for drawing the entire area. */
-  gpu_batch_presets_reset();
-
-  GPUViewport *viewport =
-      ar->draw_buffer->viewport[ar->draw_buffer->stereo ? sima->iuser.multiview_eye : 0];
-  DefaultFramebufferList *fbl = GPU_viewport_framebuffer_list_get(viewport);
-  GPU_framebuffer_bind(fbl->default_fb);
-  GPU_clear_color(0.0f, 0.0f, 0.0f, 0.0f);
-  GPU_clear(GPU_COLOR_BIT);
-
-  GPU_framebuffer_bind(fbl->overlay_fb);
-  glDisable(GL_FRAMEBUFFER_SRGB);
+  View2D *v2d = &region->v2d;
 
   /* XXX not supported yet, disabling for now */
   scene->r.scemode &= ~R_COMP_CROP;
 
-  /* clear and setup matrix */
-  UI_GetThemeColor3fv(TH_BACK, col);
-  GPU_clear_color(col[0], col[1], col[2], 1.0f);
-  GPU_clear(GPU_COLOR_BIT);
-  GPU_depth_test(false);
-
   image_user_refresh_scene(C, sima);
 
   /* we set view2d from own zoom and offset each time */
-  image_main_region_set_view2d(sima, ar);
-
-  /* we draw image in pixelspace */
-  draw_image_main(C, ar);
-
-  /* and uvs in 0.0-1.0 space */
-  UI_view2d_view_ortho(v2d);
-
-  ED_region_draw_cb_draw(C, ar, REGION_DRAW_PRE_VIEW);
-
-  ED_uvedit_draw_main(sima, scene, view_layer, obedit, obact, depsgraph);
+  image_main_region_set_view2d(sima, region);
 
   /* check for mask (delay draw) */
-  if (ED_space_image_show_uvedit(sima, obedit)) {
-    show_uvedit = true;
-  }
-  else if (sima->mode == SI_MODE_MASK) {
+  if (!ED_space_image_show_uvedit(sima, obedit) && sima->mode == SI_MODE_MASK) {
     mask = ED_space_image_get_mask(sima);
   }
-  else if (ED_space_image_paint_curve(C)) {
-    show_curve = true;
-  }
 
-  ED_region_draw_cb_draw(C, ar, REGION_DRAW_POST_VIEW);
+  /* we draw image in pixelspace */
+  DRW_draw_view(C);
+  draw_image_main_helpers(C, region);
 
-  if (sima->flag & SI_SHOW_GPENCIL) {
-    /* Grease Pencil too (in addition to UV's) */
-    draw_image_grease_pencil((bContext *)C, true);
+  /* Draw Meta data of the image isn't added to the DrawManager as it is
+   * used in other areas as well. */
+  if (sima->flag & SI_DRAW_METADATA) {
+    void *lock;
+    /* `ED_space_image_get_zoom` temporarily locks the image, so this needs to be done before
+     * the image is locked when calling `ED_space_image_acquire_buffer`. */
+    float zoomx, zoomy;
+    ED_space_image_get_zoom(sima, region, &zoomx, &zoomy);
+    ImBuf *ibuf = ED_space_image_acquire_buffer(sima, &lock, 0);
+    if (ibuf) {
+      int x, y;
+      rctf frame;
+      BLI_rctf_init(&frame, 0.0f, ibuf->x, 0.0f, ibuf->y);
+      UI_view2d_view_to_region(&region->v2d, 0.0f, 0.0f, &x, &y);
+      ED_region_image_metadata_draw(x, y, ibuf, &frame, zoomx, zoomy);
+      ED_space_image_release_buffer(sima, ibuf, lock);
+    }
   }
 
   /* sample line */
+  UI_view2d_view_ortho(v2d);
   draw_image_sample_line(sima);
-
   UI_view2d_view_restore(C);
-
-  if (sima->flag & SI_SHOW_GPENCIL) {
-    /* draw Grease Pencil - screen space only */
-    draw_image_grease_pencil((bContext *)C, false);
-  }
 
   if (mask) {
     Image *image = ED_space_image(sima);
@@ -727,7 +704,7 @@ static void image_main_region_draw(const bContext *C, ARegion *ar)
 
     ED_mask_draw_region(depsgraph,
                         mask,
-                        ar,
+                        region,
                         sima->mask_info.draw_flag,
                         sima->mask_info.draw_type,
                         sima->mask_info.overlay_mode,
@@ -741,53 +718,49 @@ static void image_main_region_draw(const bContext *C, ARegion *ar)
                         C);
   }
 
-  if (show_uvedit || mask || show_curve) {
-    UI_view2d_view_ortho(v2d);
-    ED_image_draw_cursor(ar, sima->cursor);
-    UI_view2d_view_restore(C);
-  }
-
-  WM_gizmomap_draw(ar->gizmo_map, C, WM_GIZMOMAP_DRAWSTEP_2D);
-
-  draw_image_cache(C, ar);
+  WM_gizmomap_draw(region->gizmo_map, C, WM_GIZMOMAP_DRAWSTEP_2D);
+  draw_image_cache(C, region);
 }
 
-static void image_main_region_listener(
-    wmWindow *UNUSED(win), ScrArea *sa, ARegion *ar, wmNotifier *wmn, const Scene *UNUSED(scene))
+static void image_main_region_listener(wmWindow *UNUSED(win),
+                                       ScrArea *area,
+                                       ARegion *region,
+                                       wmNotifier *wmn,
+                                       const Scene *UNUSED(scene))
 {
   /* context changes */
   switch (wmn->category) {
     case NC_GEOM:
       if (ELEM(wmn->data, ND_DATA, ND_SELECT)) {
-        WM_gizmomap_tag_refresh(ar->gizmo_map);
+        WM_gizmomap_tag_refresh(region->gizmo_map);
       }
       break;
     case NC_GPENCIL:
       if (ELEM(wmn->action, NA_EDITED, NA_SELECTED)) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       else if (wmn->data & ND_GPENCIL_EDITMODE) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
     case NC_IMAGE:
       if (wmn->action == NA_PAINTING) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
-      WM_gizmomap_tag_refresh(ar->gizmo_map);
+      WM_gizmomap_tag_refresh(region->gizmo_map);
       break;
     case NC_MATERIAL:
       if (wmn->data == ND_SHADING_LINKS) {
-        SpaceImage *sima = sa->spacedata.first;
+        SpaceImage *sima = area->spacedata.first;
 
         if (sima->iuser.scene && (sima->iuser.scene->toolsettings->uv_flag & UV_SHOW_SAME_IMAGE)) {
-          ED_region_tag_redraw(ar);
+          ED_region_tag_redraw(region);
         }
       }
       break;
     case NC_SCREEN:
       if (ELEM(wmn->data, ND_LAYER)) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
   }
@@ -796,18 +769,18 @@ static void image_main_region_listener(
 /* *********************** buttons region ************************ */
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void image_buttons_region_init(wmWindowManager *wm, ARegion *ar)
+static void image_buttons_region_init(wmWindowManager *wm, ARegion *region)
 {
   wmKeyMap *keymap;
 
-  ar->v2d.scroll = V2D_SCROLL_RIGHT | V2D_SCROLL_VERTICAL_HIDE;
-  ED_region_panels_init(wm, ar);
+  region->v2d.scroll = V2D_SCROLL_RIGHT | V2D_SCROLL_VERTICAL_HIDE;
+  ED_region_panels_init(wm, region);
 
   keymap = WM_keymap_ensure(wm->defaultconf, "Image Generic", SPACE_IMAGE, 0);
-  WM_event_add_keymap_handler(&ar->handlers, keymap);
+  WM_event_add_keymap_handler(&region->handlers, keymap);
 }
 
-static void image_buttons_region_layout(const bContext *C, ARegion *ar)
+static void image_buttons_region_layout(const bContext *C, ARegion *region)
 {
   const enum eContextObjectMode mode = CTX_data_mode_enum(C);
   const char *contexts_base[3] = {NULL};
@@ -830,11 +803,10 @@ static void image_buttons_region_layout(const bContext *C, ARegion *ar)
       break;
   }
 
-  const bool vertical = true;
-  ED_region_panels_layout_ex(C, ar, &ar->type->paneltypes, contexts_base, -1, vertical, NULL);
+  ED_region_panels_layout_ex(C, region, &region->type->paneltypes, contexts_base, NULL);
 }
 
-static void image_buttons_region_draw(const bContext *C, ARegion *ar)
+static void image_buttons_region_draw(const bContext *C, ARegion *region)
 {
   SpaceImage *sima = CTX_wm_space_image(C);
   Scene *scene = CTX_data_scene(C);
@@ -842,7 +814,7 @@ static void image_buttons_region_draw(const bContext *C, ARegion *ar)
   /* TODO(lukas): Support tiles in scopes? */
   ImBuf *ibuf = ED_space_image_acquire_buffer(sima, &lock, 0);
   /* XXX performance regression if name of scopes category changes! */
-  PanelCategoryStack *category = UI_panel_category_active_find(ar, "Scopes");
+  PanelCategoryStack *category = UI_panel_category_active_find(region, "Scopes");
 
   /* only update scopes if scope category is active */
   if (category) {
@@ -862,12 +834,12 @@ static void image_buttons_region_draw(const bContext *C, ARegion *ar)
   ED_space_image_release_buffer(sima, ibuf, lock);
 
   /* Layout handles details. */
-  ED_region_panels_draw(C, ar);
+  ED_region_panels_draw(C, region);
 }
 
 static void image_buttons_region_listener(wmWindow *UNUSED(win),
-                                          ScrArea *UNUSED(sa),
-                                          ARegion *ar,
+                                          ScrArea *UNUSED(area),
+                                          ARegion *region,
                                           wmNotifier *wmn,
                                           const Scene *UNUSED(scene))
 {
@@ -877,33 +849,33 @@ static void image_buttons_region_listener(wmWindow *UNUSED(win),
     case NC_MATERIAL:
       /* sending by texture render job and needed to properly update displaying
        * brush texture icon */
-      ED_region_tag_redraw(ar);
+      ED_region_tag_redraw(region);
       break;
     case NC_SCENE:
       switch (wmn->data) {
         case ND_MODE:
         case ND_RENDER_RESULT:
         case ND_COMPO_RESULT:
-          ED_region_tag_redraw(ar);
+          ED_region_tag_redraw(region);
           break;
       }
       break;
     case NC_IMAGE:
       if (wmn->action != NA_PAINTING) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
     case NC_NODE:
-      ED_region_tag_redraw(ar);
+      ED_region_tag_redraw(region);
       break;
     case NC_GPENCIL:
       if (ELEM(wmn->action, NA_EDITED, NA_SELECTED)) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
     case NC_BRUSH:
       if (wmn->action == NA_EDITED) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
   }
@@ -912,25 +884,25 @@ static void image_buttons_region_listener(wmWindow *UNUSED(win),
 /* *********************** scopes region ************************ */
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void image_tools_region_init(wmWindowManager *wm, ARegion *ar)
+static void image_tools_region_init(wmWindowManager *wm, ARegion *region)
 {
   wmKeyMap *keymap;
 
-  ar->v2d.scroll = V2D_SCROLL_RIGHT | V2D_SCROLL_VERTICAL_HIDE;
-  ED_region_panels_init(wm, ar);
+  region->v2d.scroll = V2D_SCROLL_RIGHT | V2D_SCROLL_VERTICAL_HIDE;
+  ED_region_panels_init(wm, region);
 
   keymap = WM_keymap_ensure(wm->defaultconf, "Image Generic", SPACE_IMAGE, 0);
-  WM_event_add_keymap_handler(&ar->handlers, keymap);
+  WM_event_add_keymap_handler(&region->handlers, keymap);
 }
 
-static void image_tools_region_draw(const bContext *C, ARegion *ar)
+static void image_tools_region_draw(const bContext *C, ARegion *region)
 {
-  ED_region_panels(C, ar);
+  ED_region_panels(C, region);
 }
 
 static void image_tools_region_listener(wmWindow *UNUSED(win),
-                                        ScrArea *UNUSED(sa),
-                                        ARegion *ar,
+                                        ScrArea *UNUSED(area),
+                                        ARegion *region,
                                         wmNotifier *wmn,
                                         const Scene *UNUSED(scene))
 {
@@ -938,13 +910,13 @@ static void image_tools_region_listener(wmWindow *UNUSED(win),
   switch (wmn->category) {
     case NC_GPENCIL:
       if (wmn->data == ND_DATA || ELEM(wmn->action, NA_EDITED, NA_SELECTED)) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
     case NC_BRUSH:
       /* NA_SELECTED is used on brush changes */
       if (ELEM(wmn->action, NA_EDITED, NA_SELECTED)) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
     case NC_SCENE:
@@ -952,17 +924,17 @@ static void image_tools_region_listener(wmWindow *UNUSED(win),
         case ND_MODE:
         case ND_RENDER_RESULT:
         case ND_COMPO_RESULT:
-          ED_region_tag_redraw(ar);
+          ED_region_tag_redraw(region);
           break;
       }
       break;
     case NC_IMAGE:
       if (wmn->action != NA_PAINTING) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
     case NC_NODE:
-      ED_region_tag_redraw(ar);
+      ED_region_tag_redraw(region);
       break;
   }
 }
@@ -970,24 +942,24 @@ static void image_tools_region_listener(wmWindow *UNUSED(win),
 /************************* header region **************************/
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void image_header_region_init(wmWindowManager *UNUSED(wm), ARegion *ar)
+static void image_header_region_init(wmWindowManager *UNUSED(wm), ARegion *region)
 {
-  ED_region_header_init(ar);
+  ED_region_header_init(region);
 }
 
-static void image_header_region_draw(const bContext *C, ARegion *ar)
+static void image_header_region_draw(const bContext *C, ARegion *region)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  SpaceImage *sima = sa->spacedata.first;
+  ScrArea *area = CTX_wm_area(C);
+  SpaceImage *sima = area->spacedata.first;
 
   image_user_refresh_scene(C, sima);
 
-  ED_region_header(C, ar);
+  ED_region_header(C, region);
 }
 
 static void image_header_region_listener(wmWindow *UNUSED(win),
-                                         ScrArea *UNUSED(sa),
-                                         ARegion *ar,
+                                         ScrArea *UNUSED(area),
+                                         ARegion *region,
                                          wmNotifier *wmn,
                                          const Scene *UNUSED(scene))
 {
@@ -997,7 +969,7 @@ static void image_header_region_listener(wmWindow *UNUSED(win),
       switch (wmn->data) {
         case ND_MODE:
         case ND_TOOLSETTINGS:
-          ED_region_tag_redraw(ar);
+          ED_region_tag_redraw(region);
           break;
       }
       break;
@@ -1005,19 +977,19 @@ static void image_header_region_listener(wmWindow *UNUSED(win),
       switch (wmn->data) {
         case ND_DATA:
         case ND_SELECT:
-          ED_region_tag_redraw(ar);
+          ED_region_tag_redraw(region);
           break;
       }
       break;
     case NC_BRUSH:
       if (wmn->action == NA_EDITED) {
-        ED_region_tag_redraw(ar);
+        ED_region_tag_redraw(region);
       }
       break;
   }
 }
 
-static void image_id_remap(ScrArea *UNUSED(sa), SpaceLink *slink, ID *old_id, ID *new_id)
+static void image_id_remap(ScrArea *UNUSED(area), SpaceLink *slink, ID *old_id, ID *new_id)
 {
   SpaceImage *simg = (SpaceImage *)slink;
 
@@ -1047,15 +1019,15 @@ static void image_id_remap(ScrArea *UNUSED(sa), SpaceLink *slink, ID *old_id, ID
  * The previous non-uv-edit mode is stored so switching back to the
  * image doesn't always reset the sub-mode.
  */
-static int image_space_subtype_get(ScrArea *sa)
+static int image_space_subtype_get(ScrArea *area)
 {
-  SpaceImage *sima = sa->spacedata.first;
+  SpaceImage *sima = area->spacedata.first;
   return sima->mode == SI_MODE_UV ? SI_MODE_UV : SI_MODE_VIEW;
 }
 
-static void image_space_subtype_set(ScrArea *sa, int value)
+static void image_space_subtype_set(ScrArea *area, int value)
 {
-  SpaceImage *sima = sa->spacedata.first;
+  SpaceImage *sima = area->spacedata.first;
   if (value == SI_MODE_UV) {
     if (sima->mode != SI_MODE_UV) {
       sima->mode_prev = sima->mode;
@@ -1085,7 +1057,7 @@ void ED_spacetype_image(void)
   st->spaceid = SPACE_IMAGE;
   strncpy(st->name, "Image", BKE_ST_MAXNAME);
 
-  st->new = image_new;
+  st->create = image_create;
   st->free = image_free;
   st->init = image_init;
   st->duplicate = image_duplicate;

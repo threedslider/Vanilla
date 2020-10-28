@@ -36,16 +36,16 @@
 
 #include "DNA_vec_types.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_fileops.h"
 #include "BLI_listbase.h"
 #include "BLI_path_util.h"
 #include "BLI_string.h"
 #include "BLI_threads.h"
+#include "BLI_utildefines.h"
 
 #include "BLF_api.h"
-#include "blf_internal_types.h"
 #include "blf_internal.h"
+#include "blf_internal_types.h"
 
 static ListBase global_font_dir = {NULL, NULL};
 
@@ -115,11 +115,8 @@ char **BLF_dir_get(int *ndir)
 
 void BLF_dir_free(char **dirs, int count)
 {
-  char *path;
-  int i;
-
-  for (i = 0; i < count; i++) {
-    path = dirs[i];
+  for (int i = 0; i < count; i++) {
+    char *path = dirs[i];
     MEM_freeN(path);
   }
   MEM_freeN(dirs);

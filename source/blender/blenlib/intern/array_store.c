@@ -112,6 +112,7 @@
 /* only for BLI_array_store_is_valid */
 #include "BLI_ghash.h"
 
+/* -------------------------------------------------------------------- */
 /** \name Defines
  *
  * Some of the logic for merging is quite involved,
@@ -189,7 +190,7 @@
  */
 #  define BCHUNK_SIZE_MIN_DIV 8
 
-/* Disallow chunks bigger then the regular chunk size scaled by this value
+/* Disallow chunks bigger than the regular chunk size scaled by this value
  * note: must be at least 2!
  * however, this code runs wont run in tests unless its ~1.1 ugh.
  * so lower only to check splitting works.
@@ -206,6 +207,7 @@
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Internal Structs
  * \{ */
 
@@ -313,6 +315,7 @@ typedef struct BTableRef {
 
 static size_t bchunk_list_size(const BChunkList *chunk_list);
 
+/* -------------------------------------------------------------------- */
 /** \name Internal BChunk API
  * \{ */
 
@@ -355,13 +358,12 @@ static bool bchunk_data_compare(const BChunk *chunk,
   if (offset + (size_t)chunk->data_len <= data_base_len) {
     return (memcmp(&data_base[offset], chunk->data, chunk->data_len) == 0);
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Internal BChunkList API
  * \{ */
 
@@ -406,7 +408,7 @@ static void bchunk_list_decref(BArrayMemory *bs_mem, BChunkList *chunk_list)
 static size_t bchunk_list_data_check(const BChunkList *chunk_list, const uchar *data)
 {
   size_t offset = 0;
-  for (BChunkRef *cref = chunk_list->chunk_refs.first; cref; cref = cref->next) {
+  LISTBASE_FOREACH (BChunkRef *, cref, &chunk_list->chunk_refs) {
     if (memcmp(&data[offset], cref->link->data, cref->link->data_len) != 0) {
       return false;
     }
@@ -525,7 +527,7 @@ static void bchunk_list_calc_trim_len(const BArrayInfo *info,
 
 #ifdef USE_MERGE_CHUNKS
   /* avoid creating too-small chunks
-   * more efficient then merging after */
+   * more efficient than merging after */
   if (data_len > info->chunk_byte_size) {
     data_last_chunk_len = (data_trim_len % info->chunk_byte_size);
     data_trim_len = data_trim_len - data_last_chunk_len;
@@ -734,10 +736,11 @@ static void bchunk_list_fill_from_array(const BArrayInfo *info,
 
 /** \} */
 
-/* ---------------------------------------------------------------------------
+/*
  * Internal Table Lookup Functions
  */
 
+/* -------------------------------------------------------------------- */
 /** \name Internal Hashing/De-Duplication API
  *
  * Only used by #bchunk_list_from_data_merge
@@ -893,20 +896,18 @@ static hash_key key_from_chunk_ref(const BArrayInfo *info,
 #  endif
     return key;
   }
-  else {
-    /* corner case - we're too small, calculate the key each time. */
+  /* corner case - we're too small, calculate the key each time. */
 
-    hash_array_from_cref(info, cref, info->accum_read_ahead_bytes, hash_store);
-    hash_accum_single(hash_store, hash_store_len, info->accum_steps);
-    hash_key key = hash_store[0];
+  hash_array_from_cref(info, cref, info->accum_read_ahead_bytes, hash_store);
+  hash_accum_single(hash_store, hash_store_len, info->accum_steps);
+  hash_key key = hash_store[0];
 
 #  ifdef USE_HASH_TABLE_KEY_CACHE
-    if (UNLIKELY(key == HASH_TABLE_KEY_UNSET)) {
-      key = HASH_TABLE_KEY_FALLBACK;
-    }
-#  endif
-    return key;
+  if (UNLIKELY(key == HASH_TABLE_KEY_UNSET)) {
+    key = HASH_TABLE_KEY_FALLBACK;
   }
+#  endif
+  return key;
 }
 
 static const BChunkRef *table_lookup(const BArrayInfo *info,
@@ -1009,6 +1010,7 @@ static const BChunkRef *table_lookup(const BArrayInfo *info,
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Main Data De-Duplication Function
  *
  * \{ */
@@ -1083,9 +1085,7 @@ static BChunkList *bchunk_list_from_data_merge(const BArrayInfo *info,
       if (cref == cref_match_first) {
         break;
       }
-      else {
-        cref = cref->next;
-      }
+      cref = cref->next;
     }
     /* happens when bytes are removed from the end of the array */
     if (chunk_size_step == data_len_original) {
@@ -1396,6 +1396,7 @@ static BChunkList *bchunk_list_from_data_merge(const BArrayInfo *info,
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Main Array Storage API
  * \{ */
 
@@ -1502,6 +1503,7 @@ void BLI_array_store_clear(BArrayStore *bs)
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name BArrayStore Statistics
  * \{ */
 
@@ -1511,7 +1513,7 @@ void BLI_array_store_clear(BArrayStore *bs)
 size_t BLI_array_store_calc_size_expanded_get(const BArrayStore *bs)
 {
   size_t size_accum = 0;
-  for (const BArrayState *state = bs->states.first; state; state = state->next) {
+  LISTBASE_FOREACH (const BArrayState *, state, &bs->states) {
     size_accum += state->chunk_list->total_size;
   }
   return size_accum;
@@ -1536,6 +1538,7 @@ size_t BLI_array_store_calc_size_compacted_get(const BArrayStore *bs)
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name BArrayState Access
  * \{ */
 
@@ -1632,14 +1635,14 @@ void BLI_array_store_state_data_get(BArrayState *state, void *data)
 {
 #ifdef USE_PARANOID_CHECKS
   size_t data_test_len = 0;
-  for (BChunkRef *cref = state->chunk_list->chunk_refs.first; cref; cref = cref->next) {
+  LISTBASE_FOREACH (BChunkRef *, cref, &state->chunk_list->chunk_refs) {
     data_test_len += cref->link->data_len;
   }
   BLI_assert(data_test_len == state->chunk_list->total_size);
 #endif
 
   uchar *data_step = (uchar *)data;
-  for (BChunkRef *cref = state->chunk_list->chunk_refs.first; cref; cref = cref->next) {
+  LISTBASE_FOREACH (BChunkRef *, cref, &state->chunk_list->chunk_refs) {
     BLI_assert(cref->link->users > 0);
     memcpy(data_step, cref->link->data, cref->link->data_len);
     data_step += cref->link->data_len;
@@ -1659,6 +1662,7 @@ void *BLI_array_store_state_data_get_alloc(BArrayState *state, size_t *r_data_le
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Debugging API (for testing).
  * \{ */
 
@@ -1666,7 +1670,7 @@ void *BLI_array_store_state_data_get_alloc(BArrayState *state, size_t *r_data_le
 static size_t bchunk_list_size(const BChunkList *chunk_list)
 {
   size_t total_size = 0;
-  for (BChunkRef *cref = chunk_list->chunk_refs.first; cref; cref = cref->next) {
+  LISTBASE_FOREACH (BChunkRef *, cref, &chunk_list->chunk_refs) {
     total_size += cref->link->data_len;
   }
   return total_size;
@@ -1679,7 +1683,7 @@ bool BLI_array_store_is_valid(BArrayStore *bs)
   /* Check Length
    * ------------ */
 
-  for (BArrayState *state = bs->states.first; state; state = state->next) {
+  LISTBASE_FOREACH (BArrayState *, state, &bs->states) {
     BChunkList *chunk_list = state->chunk_list;
     if (!(bchunk_list_size(chunk_list) == chunk_list->total_size)) {
       return false;
@@ -1692,7 +1696,7 @@ bool BLI_array_store_is_valid(BArrayStore *bs)
 #ifdef USE_MERGE_CHUNKS
     /* ensure we merge all chunks that could be merged */
     if (chunk_list->total_size > bs->info.chunk_byte_size_min) {
-      for (BChunkRef *cref = chunk_list->chunk_refs.first; cref; cref = cref->next) {
+      LISTBASE_FOREACH (BChunkRef *, cref, &chunk_list->chunk_refs) {
         if (cref->link->data_len < bs->info.chunk_byte_size_min) {
           return false;
         }
@@ -1734,7 +1738,7 @@ bool BLI_array_store_is_valid(BArrayStore *bs)
     GHash *chunk_map = BLI_ghash_ptr_new(__func__);
 
     int totrefs = 0;
-    for (BArrayState *state = bs->states.first; state; state = state->next) {
+    LISTBASE_FOREACH (BArrayState *, state, &bs->states) {
       GHASH_PTR_ADD_USER(chunk_list_map, state->chunk_list);
     }
     GHASH_ITER (gh_iter, chunk_list_map) {
@@ -1753,7 +1757,7 @@ bool BLI_array_store_is_valid(BArrayStore *bs)
     /* count chunk's */
     GHASH_ITER (gh_iter, chunk_list_map) {
       const struct BChunkList *chunk_list = BLI_ghashIterator_getKey(&gh_iter);
-      for (const BChunkRef *cref = chunk_list->chunk_refs.first; cref; cref = cref->next) {
+      LISTBASE_FOREACH (const BChunkRef *, cref, &chunk_list->chunk_refs) {
         GHASH_PTR_ADD_USER(chunk_map, cref->link);
         totrefs += 1;
       }

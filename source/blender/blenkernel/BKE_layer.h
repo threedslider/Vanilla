@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BKE_LAYER_H__
-#define __BKE_LAYER_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -44,10 +43,19 @@ struct Scene;
 struct View3D;
 struct ViewLayer;
 
+typedef enum eViewLayerCopyMethod {
+  VIEWLAYER_ADD_NEW = 0,
+  VIEWLAYER_ADD_EMPTY = 1,
+  VIEWLAYER_ADD_COPY = 2,
+} eViewLayerCopyMethod;
+
 struct ViewLayer *BKE_view_layer_default_view(const struct Scene *scene);
 struct ViewLayer *BKE_view_layer_default_render(const struct Scene *scene);
 struct ViewLayer *BKE_view_layer_find(const struct Scene *scene, const char *layer_name);
-struct ViewLayer *BKE_view_layer_add(struct Scene *scene, const char *name);
+struct ViewLayer *BKE_view_layer_add(Scene *scene,
+                                     const char *name,
+                                     ViewLayer *view_layer_source,
+                                     const int type);
 
 /* DEPRECATED */
 struct ViewLayer *BKE_view_layer_context_active_PLACEHOLDER(const struct Scene *scene);
@@ -90,7 +98,8 @@ int BKE_layer_collection_findindex(struct ViewLayer *view_layer, const struct La
 void BKE_main_collection_sync(const struct Main *bmain);
 void BKE_scene_collection_sync(const struct Scene *scene);
 void BKE_layer_collection_sync(const struct Scene *scene, struct ViewLayer *view_layer);
-void BKE_layer_collection_local_sync(struct ViewLayer *view_layer, struct View3D *v3d);
+void BKE_layer_collection_local_sync(struct ViewLayer *view_layer, const struct View3D *v3d);
+void BKE_layer_collection_local_sync_all(const struct Main *bmain);
 
 void BKE_main_collection_sync_remap(const struct Main *bmain);
 
@@ -121,13 +130,14 @@ void BKE_layer_collection_isolate_global(struct Scene *scene,
                                          struct LayerCollection *lc,
                                          bool extend);
 void BKE_layer_collection_isolate_local(struct ViewLayer *view_layer,
-                                        struct View3D *v3d,
+                                        const struct View3D *v3d,
                                         struct LayerCollection *lc,
                                         bool extend);
 void BKE_layer_collection_set_visible(struct ViewLayer *view_layer,
                                       struct LayerCollection *lc,
                                       const bool visible,
                                       const bool hierarchy);
+void BKE_layer_collection_set_flag(struct LayerCollection *lc, const int flag, const bool value);
 
 /* evaluation */
 
@@ -141,7 +151,7 @@ void BKE_layer_eval_view_layer_indexed(struct Depsgraph *depsgraph,
 
 typedef struct ObjectsVisibleIteratorData {
   struct ViewLayer *view_layer;
-  struct View3D *v3d;
+  const struct View3D *v3d;
 } ObjectsVisibleIteratorData;
 
 void BKE_view_layer_selected_objects_iterator_begin(BLI_Iterator *iter, void *data_in);
@@ -160,7 +170,7 @@ struct ObjectsInModeIteratorData {
   int object_mode;
   int object_type;
   struct ViewLayer *view_layer;
-  struct View3D *v3d;
+  const struct View3D *v3d;
   struct Base *base_active;
 };
 
@@ -343,6 +353,23 @@ void BKE_view_layer_visible_bases_iterator_end(BLI_Iterator *iter);
 
 /* layer_utils.c */
 
+struct ObjectsInViewLayerParams {
+  uint no_dup_data : 1;
+
+  bool (*filter_fn)(struct Object *ob, void *user_data);
+  void *filter_userdata;
+};
+
+struct Object **BKE_view_layer_array_selected_objects_params(
+    struct ViewLayer *view_layer,
+    const struct View3D *v3d,
+    uint *r_len,
+    const struct ObjectsInViewLayerParams *params);
+
+#define BKE_view_layer_array_selected_objects(view_layer, v3d, r_len, ...) \
+  BKE_view_layer_array_selected_objects_params( \
+      view_layer, v3d, r_len, &(const struct ObjectsInViewLayerParams)__VA_ARGS__)
+
 struct ObjectsInModeParams {
   int object_mode;
   uint no_dup_data : 1;
@@ -352,13 +379,13 @@ struct ObjectsInModeParams {
 };
 
 Base **BKE_view_layer_array_from_bases_in_mode_params(struct ViewLayer *view_layer,
-                                                      struct View3D *v3d,
+                                                      const struct View3D *v3d,
                                                       uint *r_len,
                                                       const struct ObjectsInModeParams *params);
 
 struct Object **BKE_view_layer_array_from_objects_in_mode_params(
     struct ViewLayer *view_layer,
-    struct View3D *v3d,
+    const struct View3D *v3d,
     uint *len,
     const struct ObjectsInModeParams *params);
 
@@ -406,5 +433,3 @@ bool BKE_view_layer_filter_edit_mesh_has_edges(struct Object *ob, void *user_dat
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BKE_LAYER_H__ */

@@ -22,22 +22,23 @@
 
 /* Private functions / structs of the draw manager */
 
-#ifndef __DRAW_MANAGER_H__
-#define __DRAW_MANAGER_H__
+#pragma once
 
 #include "DRW_engine.h"
 #include "DRW_render.h"
 
 #include "BLI_assert.h"
 #include "BLI_linklist.h"
-#include "BLI_threads.h"
 #include "BLI_memblock.h"
+#include "BLI_task.h"
+#include "BLI_threads.h"
 
 #include "GPU_batch.h"
 #include "GPU_context.h"
+#include "GPU_drawlist.h"
 #include "GPU_framebuffer.h"
 #include "GPU_shader.h"
-#include "GPU_uniformbuffer.h"
+#include "GPU_uniform_buffer.h"
 #include "GPU_viewport.h"
 
 #include "draw_instance_data.h"
@@ -181,7 +182,8 @@ typedef enum {
   DRW_CMD_DRAW = 0, /* Only sortable type. Must be 0. */
   DRW_CMD_DRAW_RANGE = 1,
   DRW_CMD_DRAW_INSTANCE = 2,
-  DRW_CMD_DRAW_PROCEDURAL = 3,
+  DRW_CMD_DRAW_INSTANCE_RANGE = 3,
+  DRW_CMD_DRAW_PROCEDURAL = 4,
   /* Other Commands */
   DRW_CMD_CLEAR = 12,
   DRW_CMD_DRWSTATE = 13,
@@ -200,6 +202,7 @@ typedef struct DRWCommandDraw {
 /* Assume DRWResourceHandle to be 0. */
 typedef struct DRWCommandDrawRange {
   GPUBatch *batch;
+  DRWResourceHandle handle;
   uint vert_first;
   uint vert_count;
 } DRWCommandDrawRange;
@@ -208,8 +211,15 @@ typedef struct DRWCommandDrawInstance {
   GPUBatch *batch;
   DRWResourceHandle handle;
   uint inst_count;
-  uint use_attribs; /* bool */
+  uint use_attrs; /* bool */
 } DRWCommandDrawInstance;
+
+typedef struct DRWCommandDrawInstanceRange {
+  GPUBatch *batch;
+  DRWResourceHandle handle;
+  uint inst_first;
+  uint inst_count;
+} DRWCommandDrawInstanceRange;
 
 typedef struct DRWCommandDrawProcedural {
   GPUBatch *batch;
@@ -224,7 +234,9 @@ typedef struct DRWCommandSetMutableState {
 } DRWCommandSetMutableState;
 
 typedef struct DRWCommandSetStencil {
-  uint mask;
+  uint write_mask;
+  uint comp_mask;
+  uint ref;
 } DRWCommandSetStencil;
 
 typedef struct DRWCommandSetSelectID {
@@ -243,6 +255,7 @@ typedef union DRWCommand {
   DRWCommandDraw draw;
   DRWCommandDrawRange range;
   DRWCommandDrawInstance instance;
+  DRWCommandDrawInstanceRange instance_range;
   DRWCommandDrawProcedural procedural;
   DRWCommandSetMutableState state;
   DRWCommandSetStencil stencil;
@@ -264,20 +277,21 @@ typedef enum {
   DRW_UNIFORM_FLOAT,
   DRW_UNIFORM_FLOAT_COPY,
   DRW_UNIFORM_TEXTURE,
-  DRW_UNIFORM_TEXTURE_PERSIST,
   DRW_UNIFORM_TEXTURE_REF,
+  DRW_UNIFORM_IMAGE,
+  DRW_UNIFORM_IMAGE_REF,
   DRW_UNIFORM_BLOCK,
-  DRW_UNIFORM_BLOCK_PERSIST,
+  DRW_UNIFORM_BLOCK_REF,
   DRW_UNIFORM_TFEEDBACK_TARGET,
   /** Per drawcall uniforms/UBO */
   DRW_UNIFORM_BLOCK_OBMATS,
   DRW_UNIFORM_BLOCK_OBINFOS,
   DRW_UNIFORM_RESOURCE_CHUNK,
+  DRW_UNIFORM_RESOURCE_ID,
   /** Legacy / Fallback */
   DRW_UNIFORM_BASE_INSTANCE,
   DRW_UNIFORM_MODEL_MATRIX,
   DRW_UNIFORM_MODEL_MATRIX_INVERSE,
-  DRW_UNIFORM_MODELVIEWPROJECTION_MATRIX,
   /* WARNING: set DRWUniform->type
    * bit length accordingly. */
 } DRWUniformType;
@@ -286,15 +300,28 @@ struct DRWUniform {
   union {
     /* For reference or array/vector types. */
     const void *pvalue;
-    /* Single values. */
+    /* DRW_UNIFORM_TEXTURE */
+    struct {
+      union {
+        GPUTexture *texture;
+        GPUTexture **texture_ref;
+      };
+      eGPUSamplerState sampler_state;
+    };
+    /* DRW_UNIFORM_BLOCK */
+    union {
+      GPUUniformBuf *block;
+      GPUUniformBuf **block_ref;
+    };
+    /* DRW_UNIFORM_FLOAT_COPY */
     float fvalue[4];
+    /* DRW_UNIFORM_INT_COPY */
     int ivalue[4];
   };
-  int location;
-  uint32_t type : 5;      /* DRWUniformType */
-  uint32_t length : 5;    /* cannot be more than 16 */
-  uint32_t arraysize : 5; /* cannot be more than 16 too */
-  uint32_t name_ofs : 17; /* name offset in name buffer. */
+  int location;      /* Uniform location or binding point for textures and ubos. */
+  uint8_t type;      /* DRWUniformType */
+  uint8_t length;    /* Length of vector types. */
+  uint8_t arraysize; /* Array size of scalar/vector types. */
 };
 
 struct DRWShadingGroup {
@@ -309,10 +336,13 @@ struct DRWShadingGroup {
   } cmd;
 
   union {
+    /* This struct is used during cache populate. */
     struct {
       int objectinfo;                /* Equal to 1 if the shader needs obinfos. */
       DRWResourceHandle pass_handle; /* Memblock key to parent pass. */
     };
+    /* This struct is used after cache populate if using the Z sorting.
+     * It will not conflict with the above struct. */
     struct {
       float distance;      /* Distance from camera. */
       uint original_index; /* Original position inside the shgroup list. */
@@ -328,6 +358,13 @@ struct DRWPass {
     DRWShadingGroup *first;
     DRWShadingGroup *last;
   } shgroups;
+
+  /* Draw the shgroups of this pass instead.
+   * This avoid duplicating drawcalls/shgroups
+   * for similar passes. */
+  DRWPass *original;
+  /* Link list of additional passes to render. */
+  DRWPass *next;
 
   DRWResourceHandle handle;
   DRWState state;
@@ -345,6 +382,7 @@ typedef struct DRWViewUboStorage {
   float wininv[4][4];
 
   float clipplanes[6][4];
+  float viewvecs[2][4];
   /* Should not be here. Not view dependent (only main view). */
   float viewcamtexcofac[4];
 } DRWViewUboStorage;
@@ -379,7 +417,7 @@ struct DRWView {
  * In order to keep a cache friendly data structure,
  * we alloc most of our little data into chunks of multiple item.
  * Iteration, allocation and memory usage are better.
- * We loose a bit of memory by allocating more than what we need
+ * We lose a bit of memory by allocating more than what we need
  * but it's counterbalanced by not needing the linked-list pointers
  * for each item.
  **/
@@ -457,7 +495,7 @@ typedef struct DRWManager {
   struct Object *dupli_origin;
   /** Ghash containing original objects. */
   struct GHash *dupli_ghash;
-  /** TODO(fclem) try to remove usage of this. */
+  /** TODO(fclem): try to remove usage of this. */
   DRWInstanceData *object_instance_data[MAX_INSTANCE_DATA_SIZE];
   /* Array of dupli_data (one for each enabled engine) to handle duplis. */
   void **dupli_datas;
@@ -469,7 +507,6 @@ typedef struct DRWManager {
   /* Managed by `DRW_state_set`, `DRW_state_reset` */
   DRWState state;
   DRWState state_lock;
-  uint stencil_mask;
 
   /* Per viewport */
   GPUViewport *viewport;
@@ -505,13 +542,17 @@ typedef struct DRWManager {
   DRWView *view_active;
   DRWView *view_previous;
   uint primary_view_ct;
-  /** TODO(fclem) Remove this. Only here to support
+  /** TODO(fclem): Remove this. Only here to support
    * shaders without common_view_lib.glsl */
   DRWViewUboStorage view_storage_cpy;
 
 #ifdef USE_GPU_SELECT
   uint select_id;
 #endif
+
+  struct TaskGraph *task_graph;
+  /* Contains list of objects that needs to be extracted from other objects. */
+  struct GSet *delayed_extraction;
 
   /* ---------- Nothing after this point is cleared after use ----------- */
 
@@ -525,31 +566,11 @@ typedef struct DRWManager {
 
   GPUDrawList *draw_list;
 
-  /** GPU Resource State: Memory storage between drawing. */
   struct {
-    /* High end GPUs supports up to 32 binds per shader stage.
-     * We only use textures during the vertex and fragment stage,
-     * so 2 * 32 slots is a nice limit. */
-    GPUTexture *bound_texs[DST_MAX_SLOTS];
-    uint64_t bound_tex_slots;
-    uint64_t bound_tex_slots_persist;
-
-    GPUUniformBuffer *bound_ubos[DST_MAX_SLOTS];
-    uint64_t bound_ubo_slots;
-    uint64_t bound_ubo_slots_persist;
-  } RST;
-
-  struct {
-    /* TODO(fclem) optimize: use chunks. */
+    /* TODO(fclem): optimize: use chunks. */
     DRWDebugLine *lines;
     DRWDebugSphere *spheres;
   } debug;
-
-  struct {
-    char *buffer;
-    uint buffer_len;
-    uint buffer_ofs;
-  } uniform_names;
 } DRWManager;
 
 extern DRWManager DST; /* TODO: get rid of this and allow multi-threaded rendering. */
@@ -565,10 +586,11 @@ void drw_state_set(DRWState state);
 void drw_debug_draw(void);
 void drw_debug_init(void);
 
-eDRWCommandType command_type_get(uint64_t *command_type_bits, int index);
+eDRWCommandType command_type_get(const uint64_t *command_type_bits, int index);
 
 void drw_batch_cache_validate(Object *ob);
 void drw_batch_cache_generate_requested(struct Object *ob);
+void drw_batch_cache_generate_requested_delayed(Object *ob);
 
 void drw_resource_buffer_finish(ViewportMemoryPool *vmempool);
 
@@ -576,5 +598,3 @@ void drw_resource_buffer_finish(ViewportMemoryPool *vmempool);
 GPUBatch *drw_cache_procedural_points_get(void);
 GPUBatch *drw_cache_procedural_lines_get(void);
 GPUBatch *drw_cache_procedural_triangles_get(void);
-
-#endif /* __DRAW_MANAGER_H__ */

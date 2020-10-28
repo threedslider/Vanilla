@@ -16,11 +16,11 @@
 
 #include <stdlib.h>
 
+#include "device/device.h"
 #include "render/background.h"
 #include "render/bake.h"
 #include "render/camera.h"
 #include "render/curves.h"
-#include "device/device.h"
 #include "render/film.h"
 #include "render/integrator.h"
 #include "render/light.h"
@@ -29,9 +29,11 @@
 #include "render/osl.h"
 #include "render/particles.h"
 #include "render/scene.h"
+#include "render/session.h"
 #include "render/shader.h"
 #include "render/svm.h"
 #include "render/tables.h"
+#include "render/volume.h"
 
 #include "util/util_foreach.h"
 #include "util/util_guarded_allocator.h"
@@ -41,72 +43,89 @@
 CCL_NAMESPACE_BEGIN
 
 DeviceScene::DeviceScene(Device *device)
-    : bvh_nodes(device, "__bvh_nodes", MEM_TEXTURE),
-      bvh_leaf_nodes(device, "__bvh_leaf_nodes", MEM_TEXTURE),
-      object_node(device, "__object_node", MEM_TEXTURE),
-      prim_tri_index(device, "__prim_tri_index", MEM_TEXTURE),
-      prim_tri_verts(device, "__prim_tri_verts", MEM_TEXTURE),
-      prim_type(device, "__prim_type", MEM_TEXTURE),
-      prim_visibility(device, "__prim_visibility", MEM_TEXTURE),
-      prim_index(device, "__prim_index", MEM_TEXTURE),
-      prim_object(device, "__prim_object", MEM_TEXTURE),
-      prim_time(device, "__prim_time", MEM_TEXTURE),
-      tri_shader(device, "__tri_shader", MEM_TEXTURE),
-      tri_vnormal(device, "__tri_vnormal", MEM_TEXTURE),
-      tri_vindex(device, "__tri_vindex", MEM_TEXTURE),
-      tri_patch(device, "__tri_patch", MEM_TEXTURE),
-      tri_patch_uv(device, "__tri_patch_uv", MEM_TEXTURE),
-      curves(device, "__curves", MEM_TEXTURE),
-      curve_keys(device, "__curve_keys", MEM_TEXTURE),
-      patches(device, "__patches", MEM_TEXTURE),
-      objects(device, "__objects", MEM_TEXTURE),
-      object_motion_pass(device, "__object_motion_pass", MEM_TEXTURE),
-      object_motion(device, "__object_motion", MEM_TEXTURE),
-      object_flag(device, "__object_flag", MEM_TEXTURE),
-      camera_motion(device, "__camera_motion", MEM_TEXTURE),
-      attributes_map(device, "__attributes_map", MEM_TEXTURE),
-      attributes_float(device, "__attributes_float", MEM_TEXTURE),
-      attributes_float2(device, "__attributes_float2", MEM_TEXTURE),
-      attributes_float3(device, "__attributes_float3", MEM_TEXTURE),
-      attributes_uchar4(device, "__attributes_uchar4", MEM_TEXTURE),
-      light_distribution(device, "__light_distribution", MEM_TEXTURE),
-      lights(device, "__lights", MEM_TEXTURE),
-      light_background_marginal_cdf(device, "__light_background_marginal_cdf", MEM_TEXTURE),
-      light_background_conditional_cdf(device, "__light_background_conditional_cdf", MEM_TEXTURE),
-      particles(device, "__particles", MEM_TEXTURE),
-      svm_nodes(device, "__svm_nodes", MEM_TEXTURE),
-      shaders(device, "__shaders", MEM_TEXTURE),
-      lookup_table(device, "__lookup_table", MEM_TEXTURE),
-      sobol_directions(device, "__sobol_directions", MEM_TEXTURE),
-      ies_lights(device, "__ies", MEM_TEXTURE)
+    : bvh_nodes(device, "__bvh_nodes", MEM_GLOBAL),
+      bvh_leaf_nodes(device, "__bvh_leaf_nodes", MEM_GLOBAL),
+      object_node(device, "__object_node", MEM_GLOBAL),
+      prim_tri_index(device, "__prim_tri_index", MEM_GLOBAL),
+      prim_tri_verts(device, "__prim_tri_verts", MEM_GLOBAL),
+      prim_type(device, "__prim_type", MEM_GLOBAL),
+      prim_visibility(device, "__prim_visibility", MEM_GLOBAL),
+      prim_index(device, "__prim_index", MEM_GLOBAL),
+      prim_object(device, "__prim_object", MEM_GLOBAL),
+      prim_time(device, "__prim_time", MEM_GLOBAL),
+      tri_shader(device, "__tri_shader", MEM_GLOBAL),
+      tri_vnormal(device, "__tri_vnormal", MEM_GLOBAL),
+      tri_vindex(device, "__tri_vindex", MEM_GLOBAL),
+      tri_patch(device, "__tri_patch", MEM_GLOBAL),
+      tri_patch_uv(device, "__tri_patch_uv", MEM_GLOBAL),
+      curves(device, "__curves", MEM_GLOBAL),
+      curve_keys(device, "__curve_keys", MEM_GLOBAL),
+      patches(device, "__patches", MEM_GLOBAL),
+      objects(device, "__objects", MEM_GLOBAL),
+      object_motion_pass(device, "__object_motion_pass", MEM_GLOBAL),
+      object_motion(device, "__object_motion", MEM_GLOBAL),
+      object_flag(device, "__object_flag", MEM_GLOBAL),
+      object_volume_step(device, "__object_volume_step", MEM_GLOBAL),
+      camera_motion(device, "__camera_motion", MEM_GLOBAL),
+      attributes_map(device, "__attributes_map", MEM_GLOBAL),
+      attributes_float(device, "__attributes_float", MEM_GLOBAL),
+      attributes_float2(device, "__attributes_float2", MEM_GLOBAL),
+      attributes_float3(device, "__attributes_float3", MEM_GLOBAL),
+      attributes_uchar4(device, "__attributes_uchar4", MEM_GLOBAL),
+      light_distribution(device, "__light_distribution", MEM_GLOBAL),
+      lights(device, "__lights", MEM_GLOBAL),
+      light_background_marginal_cdf(device, "__light_background_marginal_cdf", MEM_GLOBAL),
+      light_background_conditional_cdf(device, "__light_background_conditional_cdf", MEM_GLOBAL),
+      particles(device, "__particles", MEM_GLOBAL),
+      svm_nodes(device, "__svm_nodes", MEM_GLOBAL),
+      shaders(device, "__shaders", MEM_GLOBAL),
+      lookup_table(device, "__lookup_table", MEM_GLOBAL),
+      sample_pattern_lut(device, "__sample_pattern_lut", MEM_GLOBAL),
+      ies_lights(device, "__ies", MEM_GLOBAL)
 {
   memset((void *)&data, 0, sizeof(data));
 }
 
 Scene::Scene(const SceneParams &params_, Device *device)
-    : name("Scene"), device(device), dscene(device), params(params_)
+    : name("Scene"),
+      default_surface(NULL),
+      default_volume(NULL),
+      default_light(NULL),
+      default_background(NULL),
+      default_empty(NULL),
+      device(device),
+      dscene(device),
+      params(params_),
+      update_stats(NULL)
 {
   memset((void *)&dscene.data, 0, sizeof(dscene.data));
 
-  camera = new Camera();
-  dicing_camera = new Camera();
+  camera = create_node<Camera>();
+  dicing_camera = create_node<Camera>();
   lookup_tables = new LookupTables();
-  film = new Film();
-  background = new Background();
+  film = create_node<Film>();
+  background = create_node<Background>();
   light_manager = new LightManager();
   geometry_manager = new GeometryManager();
   object_manager = new ObjectManager();
-  integrator = new Integrator();
+  integrator = create_node<Integrator>();
   image_manager = new ImageManager(device->info);
   particle_system_manager = new ParticleSystemManager();
-  curve_system_manager = new CurveSystemManager();
   bake_manager = new BakeManager();
+  kernels_loaded = false;
+
+  /* TODO(sergey): Check if it's indeed optimal value for the split kernel. */
+  max_closure_global = 1;
+
+  film->add_default(this);
 
   /* OSL only works on the CPU */
   if (device->info.has_osl)
-    shader_manager = ShaderManager::create(this, params.shadingsystem);
+    shader_manager = ShaderManager::create(params.shadingsystem);
   else
-    shader_manager = ShaderManager::create(this, SHADINGSYSTEM_SVM);
+    shader_manager = ShaderManager::create(SHADINGSYSTEM_SVM);
+
+  shader_manager->add_default(this);
 }
 
 Scene::~Scene()
@@ -145,7 +164,6 @@ void Scene::free_memory(bool final)
     light_manager->device_free(device, &dscene);
 
     particle_system_manager->device_free(device, &dscene);
-    curve_system_manager->device_free(device, &dscene);
 
     bake_manager->device_free(device, &dscene);
 
@@ -169,9 +187,9 @@ void Scene::free_memory(bool final)
     delete shader_manager;
     delete light_manager;
     delete particle_system_manager;
-    delete curve_system_manager;
     delete image_manager;
     delete bake_manager;
+    delete update_stats;
   }
 }
 
@@ -181,6 +199,20 @@ void Scene::device_update(Device *device_, Progress &progress)
     device = device_;
 
   bool print_stats = need_data_update();
+
+  if (update_stats) {
+    update_stats->clear();
+  }
+
+  scoped_callback_timer timer([this, print_stats](double time) {
+    if (update_stats) {
+      update_stats->scene.times.add_entry({"device_update", time});
+
+      if (print_stats) {
+        printf("Update statistics:\n%s\n", update_stats->full_report().c_str());
+      }
+    }
+  });
 
   /* The order of updates is important, because there's dependencies between
    * the different managers, using data computed by previous managers.
@@ -222,12 +254,6 @@ void Scene::device_update(Device *device_, Progress &progress)
   if (progress.get_cancel() || device->have_error())
     return;
 
-  progress.set_status("Updating Hair Systems");
-  curve_system_manager->device_update(device, &dscene, this, progress);
-
-  if (progress.get_cancel() || device->have_error())
-    return;
-
   progress.set_status("Updating Particle Systems");
   particle_system_manager->device_update(device, &dscene, this, progress);
 
@@ -259,7 +285,7 @@ void Scene::device_update(Device *device_, Progress &progress)
     return;
 
   progress.set_status("Updating Lookup Tables");
-  lookup_tables->device_update(device, &dscene);
+  lookup_tables->device_update(device, &dscene, this);
 
   if (progress.get_cancel() || device->have_error())
     return;
@@ -283,7 +309,7 @@ void Scene::device_update(Device *device_, Progress &progress)
     return;
 
   progress.set_status("Updating Lookup Tables");
-  lookup_tables->device_update(device, &dscene);
+  lookup_tables->device_update(device, &dscene, this);
 
   if (progress.get_cancel() || device->have_error())
     return;
@@ -315,7 +341,7 @@ Scene::MotionType Scene::need_motion()
 {
   if (integrator->motion_blur)
     return MOTION_BLUR;
-  else if (Pass::contains(film->passes, PASS_MOTION))
+  else if (Pass::contains(passes, PASS_MOTION))
     return MOTION_PASS;
   else
     return MOTION_NONE;
@@ -332,7 +358,7 @@ float Scene::motion_shutter_time()
 bool Scene::need_global_attribute(AttributeStandard std)
 {
   if (std == ATTR_STD_UV)
-    return Pass::contains(film->passes, PASS_UV);
+    return Pass::contains(passes, PASS_UV);
   else if (std == ATTR_STD_MOTION_VERTEX_POSITION)
     return need_motion() != MOTION_NONE;
   else if (std == ATTR_STD_MOTION_VERTEX_NORMAL)
@@ -358,8 +384,7 @@ bool Scene::need_data_update()
   return (background->need_update || image_manager->need_update || object_manager->need_update ||
           geometry_manager->need_update || light_manager->need_update ||
           lookup_tables->need_update || integrator->need_update || shader_manager->need_update ||
-          particle_system_manager->need_update || curve_system_manager->need_update ||
-          bake_manager->need_update || film->need_update);
+          particle_system_manager->need_update || bake_manager->need_update || film->need_update);
 }
 
 bool Scene::need_reset()
@@ -382,7 +407,6 @@ void Scene::reset()
   geometry_manager->tag_update(this);
   light_manager->tag_update(this);
   particle_system_manager->tag_update(this);
-  curve_system_manager->tag_update(this);
 }
 
 void Scene::device_free()
@@ -394,6 +418,293 @@ void Scene::collect_statistics(RenderStats *stats)
 {
   geometry_manager->collect_statistics(this, stats);
   image_manager->collect_statistics(stats);
+}
+
+void Scene::enable_update_stats()
+{
+  if (!update_stats) {
+    update_stats = new SceneUpdateStats();
+  }
+}
+
+DeviceRequestedFeatures Scene::get_requested_device_features()
+{
+  DeviceRequestedFeatures requested_features;
+
+  shader_manager->get_requested_features(this, &requested_features);
+
+  /* This features are not being tweaked as often as shaders,
+   * so could be done selective magic for the viewport as well.
+   */
+  bool use_motion = need_motion() == Scene::MotionType::MOTION_BLUR;
+  requested_features.use_hair = false;
+  requested_features.use_hair_thick = (params.hair_shape == CURVE_THICK);
+  requested_features.use_object_motion = false;
+  requested_features.use_camera_motion = use_motion && camera->use_motion();
+  foreach (Object *object, objects) {
+    Geometry *geom = object->geometry;
+    if (use_motion) {
+      requested_features.use_object_motion |= object->use_motion() | geom->use_motion_blur;
+      requested_features.use_camera_motion |= geom->use_motion_blur;
+    }
+    if (object->is_shadow_catcher) {
+      requested_features.use_shadow_tricks = true;
+    }
+    if (geom->type == Geometry::MESH) {
+      Mesh *mesh = static_cast<Mesh *>(geom);
+#ifdef WITH_OPENSUBDIV
+      if (mesh->subdivision_type != Mesh::SUBDIVISION_NONE) {
+        requested_features.use_patch_evaluation = true;
+      }
+#endif
+      requested_features.use_true_displacement |= mesh->has_true_displacement();
+    }
+    else if (geom->type == Geometry::HAIR) {
+      requested_features.use_hair = true;
+    }
+  }
+
+  requested_features.use_background_light = light_manager->has_background_light(this);
+
+  requested_features.use_baking = bake_manager->get_baking();
+  requested_features.use_integrator_branched = (integrator->method == Integrator::BRANCHED_PATH);
+  if (film->denoising_data_pass) {
+    requested_features.use_denoising = true;
+    requested_features.use_shadow_tricks = true;
+  }
+
+  return requested_features;
+}
+
+bool Scene::update(Progress &progress, bool &kernel_switch_needed)
+{
+  /* update scene */
+  if (need_update()) {
+    /* Updated used shader tag so we know which features are need for the kernel. */
+    shader_manager->update_shaders_used(this);
+
+    /* Update max_closures. */
+    KernelIntegrator *kintegrator = &dscene.data.integrator;
+    if (params.background) {
+      kintegrator->max_closures = get_max_closure_count();
+    }
+    else {
+      /* Currently viewport render is faster with higher max_closures, needs investigating. */
+      kintegrator->max_closures = MAX_CLOSURE;
+    }
+
+    /* Load render kernels, before device update where we upload data to the GPU. */
+    bool new_kernels_needed = load_kernels(progress, false);
+
+    progress.set_status("Updating Scene");
+    MEM_GUARDED_CALL(&progress, device_update, device, progress);
+
+    DeviceKernelStatus kernel_switch_status = device->get_active_kernel_switch_state();
+    kernel_switch_needed = kernel_switch_status == DEVICE_KERNEL_FEATURE_KERNEL_AVAILABLE ||
+                           kernel_switch_status == DEVICE_KERNEL_FEATURE_KERNEL_INVALID;
+    if (kernel_switch_status == DEVICE_KERNEL_WAITING_FOR_FEATURE_KERNEL) {
+      progress.set_kernel_status("Compiling render kernels");
+    }
+    if (new_kernels_needed || kernel_switch_needed) {
+      progress.set_kernel_status("Compiling render kernels");
+      device->wait_for_availability(loaded_kernel_features);
+      progress.set_kernel_status("");
+    }
+
+    return true;
+  }
+  return false;
+}
+
+bool Scene::load_kernels(Progress &progress, bool lock_scene)
+{
+  thread_scoped_lock scene_lock;
+  if (lock_scene) {
+    scene_lock = thread_scoped_lock(mutex);
+  }
+
+  DeviceRequestedFeatures requested_features = get_requested_device_features();
+
+  if (!kernels_loaded || loaded_kernel_features.modified(requested_features)) {
+    progress.set_status("Loading render kernels (may take a few minutes the first time)");
+
+    scoped_timer timer;
+
+    VLOG(2) << "Requested features:\n" << requested_features;
+    if (!device->load_kernels(requested_features)) {
+      string message = device->error_message();
+      if (message.empty())
+        message = "Failed loading render kernel, see console for errors";
+
+      progress.set_error(message);
+      progress.set_status(message);
+      progress.set_update();
+      return false;
+    }
+
+    progress.add_skip_time(timer, false);
+    VLOG(1) << "Total time spent loading kernels: " << time_dt() - timer.get_start();
+
+    kernels_loaded = true;
+    loaded_kernel_features = requested_features;
+    return true;
+  }
+  return false;
+}
+
+int Scene::get_max_closure_count()
+{
+  if (shader_manager->use_osl()) {
+    /* OSL always needs the maximum as we can't predict the
+     * number of closures a shader might generate. */
+    return MAX_CLOSURE;
+  }
+
+  int max_closures = 0;
+  for (int i = 0; i < shaders.size(); i++) {
+    Shader *shader = shaders[i];
+    if (shader->used) {
+      int num_closures = shader->graph->get_num_closures();
+      max_closures = max(max_closures, num_closures);
+    }
+  }
+  max_closure_global = max(max_closure_global, max_closures);
+
+  if (max_closure_global > MAX_CLOSURE) {
+    /* This is usually harmless as more complex shader tend to get many
+     * closures discarded due to mixing or low weights. We need to limit
+     * to MAX_CLOSURE as this is hardcoded in CPU/mega kernels, and it
+     * avoids excessive memory usage for split kernels. */
+    VLOG(2) << "Maximum number of closures exceeded: " << max_closure_global << " > "
+            << MAX_CLOSURE;
+
+    max_closure_global = MAX_CLOSURE;
+  }
+
+  return max_closure_global;
+}
+
+template<> Light *Scene::create_node<Light>()
+{
+  Light *node = new Light();
+  node->set_owner(this);
+  lights.push_back(node);
+  light_manager->tag_update(this);
+  return node;
+}
+
+template<> Mesh *Scene::create_node<Mesh>()
+{
+  Mesh *node = new Mesh();
+  node->set_owner(this);
+  geometry.push_back(node);
+  geometry_manager->tag_update(this);
+  return node;
+}
+
+template<> Hair *Scene::create_node<Hair>()
+{
+  Hair *node = new Hair();
+  node->set_owner(this);
+  geometry.push_back(node);
+  geometry_manager->tag_update(this);
+  return node;
+}
+
+template<> Volume *Scene::create_node<Volume>()
+{
+  Volume *node = new Volume();
+  node->set_owner(this);
+  geometry.push_back(node);
+  geometry_manager->tag_update(this);
+  return node;
+}
+
+template<> Object *Scene::create_node<Object>()
+{
+  Object *node = new Object();
+  node->set_owner(this);
+  objects.push_back(node);
+  object_manager->tag_update(this);
+  return node;
+}
+
+template<> ParticleSystem *Scene::create_node<ParticleSystem>()
+{
+  ParticleSystem *node = new ParticleSystem();
+  node->set_owner(this);
+  particle_systems.push_back(node);
+  particle_system_manager->tag_update(this);
+  return node;
+}
+
+template<> Shader *Scene::create_node<Shader>()
+{
+  Shader *node = new Shader();
+  node->set_owner(this);
+  shaders.push_back(node);
+  shader_manager->need_update = true;
+  return node;
+}
+
+template<typename T> void delete_node_from_array(vector<T> &nodes, T node)
+{
+  for (size_t i = 0; i < nodes.size(); ++i) {
+    if (nodes[i] == node) {
+      std::swap(nodes[i], nodes[nodes.size() - 1]);
+      break;
+    }
+  }
+
+  nodes.resize(nodes.size() - 1);
+  delete node;
+}
+
+template<> void Scene::delete_node_impl(Light *node)
+{
+  delete_node_from_array(lights, node);
+  light_manager->tag_update(this);
+}
+
+template<> void Scene::delete_node_impl(Mesh *node)
+{
+  delete_node_from_array(geometry, static_cast<Geometry *>(node));
+  geometry_manager->tag_update(this);
+}
+
+template<> void Scene::delete_node_impl(Hair *node)
+{
+  delete_node_from_array(geometry, static_cast<Geometry *>(node));
+  geometry_manager->tag_update(this);
+}
+
+template<> void Scene::delete_node_impl(Volume *node)
+{
+  delete_node_from_array(geometry, static_cast<Geometry *>(node));
+  geometry_manager->tag_update(this);
+}
+
+template<> void Scene::delete_node_impl(Geometry *node)
+{
+  delete_node_from_array(geometry, node);
+  geometry_manager->tag_update(this);
+}
+
+template<> void Scene::delete_node_impl(Object *node)
+{
+  delete_node_from_array(objects, node);
+  object_manager->tag_update(this);
+}
+
+template<> void Scene::delete_node_impl(ParticleSystem *node)
+{
+  delete_node_from_array(particle_systems, node);
+  particle_system_manager->tag_update(this);
+}
+
+template<> void Scene::delete_node_impl(Shader * /*node*/)
+{
+  /* don't delete unused shaders, not supported */
 }
 
 CCL_NAMESPACE_END

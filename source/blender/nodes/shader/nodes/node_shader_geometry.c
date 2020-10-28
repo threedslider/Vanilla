@@ -22,16 +22,16 @@
 /* **************** OUTPUT ******************** */
 
 static bNodeSocketTemplate sh_node_geometry_out[] = {
-    {SOCK_VECTOR, 0, N_("Position"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {SOCK_VECTOR, 0, N_("Normal"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {SOCK_VECTOR, 0, N_("Tangent"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {SOCK_VECTOR, 0, N_("True Normal"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {SOCK_VECTOR, 0, N_("Incoming"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {SOCK_VECTOR, 0, N_("Parametric"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {SOCK_FLOAT, 0, N_("Backfacing"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {SOCK_FLOAT, 0, N_("Pointiness"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {SOCK_FLOAT, 0, N_("Random Per Island"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-    {-1, 0, ""},
+    {SOCK_VECTOR, N_("Position"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {SOCK_VECTOR, N_("Normal"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {SOCK_VECTOR, N_("Tangent"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {SOCK_VECTOR, N_("True Normal"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {SOCK_VECTOR, N_("Incoming"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {SOCK_VECTOR, N_("Parametric"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {SOCK_FLOAT, N_("Backfacing"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {SOCK_FLOAT, N_("Pointiness"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {SOCK_FLOAT, N_("Random Per Island"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+    {-1, ""},
 };
 
 static int node_shader_gpu_geometry(GPUMaterial *mat,
@@ -42,9 +42,12 @@ static int node_shader_gpu_geometry(GPUMaterial *mat,
 {
   /* HACK: Don't request GPU_BARYCENTRIC_TEXCO if not used because it will
    * trigger the use of geometry shader (and the performance penalty it implies). */
-  float val[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  const float val[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   GPUNodeLink *bary_link = (!out[5].hasoutput) ? GPU_constant(val) :
                                                  GPU_builtin(GPU_BARYCENTRIC_TEXCO);
+  if (out[5].hasoutput) {
+    GPU_material_flag_set(mat, GPU_MATFLAG_BARYCENTRIC);
+  }
   /* Opti: don't request orco if not needed. */
   GPUNodeLink *orco_link = (!out[2].hasoutput) ? GPU_constant(val) :
                                                  GPU_attribute(mat, CD_ORCO, "");

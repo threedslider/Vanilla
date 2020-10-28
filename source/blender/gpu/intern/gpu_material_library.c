@@ -27,10 +27,10 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_dynstr.h"
 #include "BLI_ghash.h"
 #include "BLI_string.h"
+#include "BLI_utildefines.h"
 
 #include "gpu_material_library.h"
 
@@ -678,14 +678,13 @@ char *gpu_str_skip_token(char *str, char *token, int max)
     if (ELEM(*str, ' ', '(', ')', ',', ';', '\t', '\n', '\r')) {
       break;
     }
-    else {
-      if (token && len < max - 1) {
-        *token = *str;
-        token++;
-        len++;
-      }
-      str++;
+
+    if (token && len < max - 1) {
+      *token = *str;
+      token++;
+      len++;
     }
+    str++;
   }
 
   if (token) {

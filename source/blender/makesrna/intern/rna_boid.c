@@ -25,10 +25,10 @@
 #include <limits.h>
 #include <stdlib.h>
 
-#include "DNA_scene_types.h"
 #include "DNA_boid_types.h"
 #include "DNA_object_types.h"
 #include "DNA_particle_types.h"
+#include "DNA_scene_types.h"
 
 #include "BLI_utildefines.h"
 
@@ -84,7 +84,7 @@ const EnumPropertyItem rna_enum_boidrule_type_items[] = {
      "HIDE",
      0,
      "Hide",
-     "Find a deflector move to it's other side from closest enemy"},
+     "Find a deflector move to its other side from closest enemy"},
     {eBoidRuleType_FollowPath,
      "FOLLOW_PATH",
      0,
@@ -94,7 +94,7 @@ const EnumPropertyItem rna_enum_boidrule_type_items[] = {
      "FOLLOW_WALL",
      0,
      "Follow Wall",
-     "Move next to a deflector object's in direction of it's tangent"},
+     "Move next to a deflector object's in direction of its tangent"},
 #endif
     {0, NULL, 0, NULL, NULL},
 };

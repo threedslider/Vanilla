@@ -30,13 +30,13 @@
 #include "bmesh.h"
 
 #include "bmesh_py_types.h"
-#include "bmesh_py_types_select.h"
 #include "bmesh_py_types_customdata.h"
 #include "bmesh_py_types_meshdata.h"
+#include "bmesh_py_types_select.h"
 
+#include "bmesh_py_geometry.h"
 #include "bmesh_py_ops.h"
 #include "bmesh_py_utils.h"
-#include "bmesh_py_geometry.h"
 
 #include "BKE_editmesh.h"
 
@@ -201,8 +201,7 @@ PyObject *BPyInit_bmesh(void)
 
   /* bmesh.ops (not a real module, exposes module like access). */
   PyModule_AddObject(mod, "ops", (submodule = BPyInit_bmesh_ops()));
-  /* PyDict_SetItemString(sys_modules, PyModule_GetNameObject(submodule), submodule); */
-  PyDict_SetItemString(sys_modules, "bmesh.ops", submodule); /* fake module */
+  PyDict_SetItem(sys_modules, PyModule_GetNameObject(submodule), submodule);
 
   PyModule_AddObject(mod, "utils", (submodule = BPyInit_bmesh_utils()));
   PyDict_SetItem(sys_modules, PyModule_GetNameObject(submodule), submodule);

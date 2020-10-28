@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BLI_STRING_UTILS_H__
-#define __BLI_STRING_UTILS_H__
+#pragma once
 
 /** \file
  * \ingroup bli
@@ -26,12 +25,12 @@
 
 #include <stdarg.h>
 
+#include "BLI_compiler_attrs.h"
+#include "BLI_utildefines.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "BLI_compiler_attrs.h"
-#include "BLI_utildefines_variadic.h"
 
 struct ListBase;
 
@@ -48,6 +47,11 @@ char *BLI_string_join_array(char *result,
                             size_t result_len,
                             const char *strings[],
                             uint strings_len) ATTR_NONNULL();
+char *BLI_string_join_array_by_sep_char(char *result,
+                                        size_t result_len,
+                                        char sep,
+                                        const char *strings[],
+                                        uint strings_len) ATTR_NONNULL();
 
 char *BLI_string_join_arrayN(const char *strings[], uint strings_len) ATTR_WARN_UNUSED_RESULT
     ATTR_NONNULL();
@@ -92,5 +96,3 @@ bool BLI_uniquename(struct ListBase *list,
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BLI_STRING_UTILS_H__ */

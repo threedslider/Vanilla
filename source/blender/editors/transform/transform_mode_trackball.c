@@ -36,13 +36,11 @@
 #include "BLT_translation.h"
 
 #include "transform.h"
-#include "transform_snap.h"
 #include "transform_mode.h"
+#include "transform_snap.h"
 
 /* -------------------------------------------------------------------- */
-/* Transform (Rotation - Trackball) */
-
-/** \name Transform Rotation - Trackball
+/** \name Transform (Rotation - Trackball)
  * \{ */
 
 static void applyTrackballValue(TransInfo *t,
@@ -63,10 +61,6 @@ static void applyTrackballValue(TransInfo *t,
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransData *td = tc->data;
     for (i = 0; i < tc->data_len; i++, td++) {
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -97,7 +91,7 @@ static void applyTrackball(TransInfo *t, const int UNUSED(mval[2]))
 
   copy_v2_v2(phi, t->values);
 
-  snapGridIncrement(t, phi);
+  transform_snap_increment(t, phi);
 
   applyNumInput(&t->num, phi);
 
@@ -135,15 +129,15 @@ static void applyTrackball(TransInfo *t, const int UNUSED(mval[2]))
 
   mul_m3_m3m3(mat, smat, totmat);
 
-  // TRANSFORM_FIX_ME
-  //copy_m3_m3(t->mat, mat);  // used in gizmo
+  /* TRANSFORM_FIX_ME */
+  // copy_m3_m3(t->mat, mat);  /* used in gizmo. */
 #endif
 
   applyTrackballValue(t, axis1, axis2, phi);
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initTrackball(TransInfo *t)
@@ -155,11 +149,10 @@ void initTrackball(TransInfo *t)
 
   t->idx_max = 1;
   t->num.idx_max = 1;
-  t->snap[0] = 0.0f;
-  t->snap[1] = DEG2RAD(5.0);
-  t->snap[2] = DEG2RAD(1.0);
+  t->snap[0] = DEG2RAD(5.0);
+  t->snap[1] = DEG2RAD(1.0);
 
-  copy_v3_fl(t->num.val_inc, t->snap[2]);
+  copy_v3_fl(t->num.val_inc, t->snap[1]);
   t->num.unit_sys = t->scene->unit.system;
   t->num.unit_use_radians = (t->scene->unit.system_rotation == USER_UNIT_ROT_RADIANS);
   t->num.unit_type[0] = B_UNIT_ROTATION;

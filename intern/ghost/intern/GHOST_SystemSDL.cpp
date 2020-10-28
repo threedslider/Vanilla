@@ -26,9 +26,9 @@
 
 #include "GHOST_WindowManager.h"
 
+#include "GHOST_EventButton.h"
 #include "GHOST_EventCursor.h"
 #include "GHOST_EventKey.h"
-#include "GHOST_EventButton.h"
 #include "GHOST_EventWheel.h"
 
 GHOST_SystemSDL::GHOST_SystemSDL() : GHOST_System()
@@ -49,7 +49,7 @@ GHOST_SystemSDL::~GHOST_SystemSDL()
   SDL_Quit();
 }
 
-GHOST_IWindow *GHOST_SystemSDL::createWindow(const STR_String &title,
+GHOST_IWindow *GHOST_SystemSDL::createWindow(const char *title,
                                              GHOST_TInt32 left,
                                              GHOST_TInt32 top,
                                              GHOST_TUns32 width,
@@ -139,7 +139,7 @@ GHOST_TUns8 GHOST_SystemSDL::getNumDisplays() const
   return SDL_GetNumVideoDisplays();
 }
 
-GHOST_IContext *GHOST_SystemSDL::createOffscreenContext()
+GHOST_IContext *GHOST_SystemSDL::createOffscreenContext(GHOST_GLSettings glSettings)
 {
   GHOST_Context *context = new GHOST_ContextSDL(0,
                                                 NULL,
@@ -255,8 +255,8 @@ static GHOST_TKey convertSDLKey(SDL_Scancode key)
 
       /* keypad events */
 
-      /* note, sdl defines a bunch of kp defines I never saw before like
-       * SDL_SCANCODE_KP_PERCENT, SDL_SCANCODE_KP_XOR - campbell */
+      /* NOTE: SDL defines a bunch of key-pad identifiers that aren't supported by GHOST,
+       * such as #SDL_SCANCODE_KP_PERCENT, #SDL_SCANCODE_KP_XOR. */
       GXMAP(type, SDL_SCANCODE_KP_0, GHOST_kKeyNumpad0);
       GXMAP(type, SDL_SCANCODE_KP_1, GHOST_kKeyNumpad1);
       GXMAP(type, SDL_SCANCODE_KP_2, GHOST_kKeyNumpad2);
@@ -390,22 +390,31 @@ void GHOST_SystemSDL::processEvent(SDL_Event *sdl_event)
             SDL_WarpMouseInWindow(sdl_win, x_new - x_win, y_new - y_win);
           }
 
-          g_event = new GHOST_EventCursor(
-              getMilliSeconds(), GHOST_kEventCursorMove, window, x_new, y_new);
+          g_event = new GHOST_EventCursor(getMilliSeconds(),
+                                          GHOST_kEventCursorMove,
+                                          window,
+                                          x_new,
+                                          y_new,
+                                          GHOST_TABLET_DATA_NONE);
         }
         else {
           g_event = new GHOST_EventCursor(getMilliSeconds(),
                                           GHOST_kEventCursorMove,
                                           window,
                                           x_root + x_accum,
-                                          y_root + y_accum);
+                                          y_root + y_accum,
+                                          GHOST_TABLET_DATA_NONE);
         }
       }
       else
 #endif
       {
-        g_event = new GHOST_EventCursor(
-            getMilliSeconds(), GHOST_kEventCursorMove, window, x_root, y_root);
+        g_event = new GHOST_EventCursor(getMilliSeconds(),
+                                        GHOST_kEventCursorMove,
+                                        window,
+                                        x_root,
+                                        y_root,
+                                        GHOST_TABLET_DATA_NONE);
       }
       break;
     }
@@ -435,7 +444,8 @@ void GHOST_SystemSDL::processEvent(SDL_Event *sdl_event)
       else
         break;
 
-      g_event = new GHOST_EventButton(getMilliSeconds(), type, window, gbmask);
+      g_event = new GHOST_EventButton(
+          getMilliSeconds(), type, window, gbmask, GHOST_TABLET_DATA_NONE);
       break;
     }
     case SDL_MOUSEWHEEL: {
@@ -591,7 +601,7 @@ void GHOST_SystemSDL::processEvent(SDL_Event *sdl_event)
         }
       }
 
-      g_event = new GHOST_EventKey(getMilliSeconds(), type, window, gkey, sym, NULL);
+      g_event = new GHOST_EventKey(getMilliSeconds(), type, window, gkey, sym, NULL, false);
       break;
     }
   }

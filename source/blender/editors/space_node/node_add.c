@@ -40,8 +40,8 @@
 #include "BKE_texture.h"
 
 #include "ED_node.h" /* own include */
-#include "ED_screen.h"
 #include "ED_render.h"
+#include "ED_screen.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -82,7 +82,7 @@ bNode *node_add_node(const bContext *C, const char *idname, int type, float locx
   nodeSetSelected(node, true);
 
   ntreeUpdateTree(bmain, snode->edittree);
-  ED_node_set_active(bmain, snode->edittree, node);
+  ED_node_set_active(bmain, snode->edittree, node, NULL);
 
   snode_update(snode, node);
 
@@ -100,21 +100,19 @@ static bool add_reroute_intersect_check(bNodeLink *link,
                                         float result[2])
 {
   float coord_array[NODE_LINK_RESOL + 1][2];
-  int i, b;
 
   if (node_link_bezier_points(NULL, NULL, link, coord_array, NODE_LINK_RESOL)) {
-
-    for (i = 0; i < tot - 1; i++) {
-      for (b = 0; b < NODE_LINK_RESOL; b++) {
+    for (int i = 0; i < tot - 1; i++) {
+      for (int b = 0; b < NODE_LINK_RESOL; b++) {
         if (isect_seg_seg_v2(mcoords[i], mcoords[i + 1], coord_array[b], coord_array[b + 1]) > 0) {
           result[0] = (mcoords[i][0] + mcoords[i + 1][0]) / 2.0f;
           result[1] = (mcoords[i][1] + mcoords[i + 1][1]) / 2.0f;
-          return 1;
+          return true;
         }
       }
     }
   }
-  return 0;
+  return false;
 }
 
 typedef struct bNodeSocketLink {
@@ -215,7 +213,7 @@ static bNodeSocketLink *add_reroute_do_socket_section(bContext *C,
 static int add_reroute_exec(bContext *C, wmOperator *op)
 {
   SpaceNode *snode = CTX_wm_space_node(C);
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
   bNodeTree *ntree = snode->edittree;
   float mcoords[256][2];
   int i = 0;
@@ -226,7 +224,7 @@ static int add_reroute_exec(bContext *C, wmOperator *op)
 
     RNA_float_get_array(&itemptr, "loc", loc);
     UI_view2d_region_to_view(
-        &ar->v2d, (short)loc[0], (short)loc[1], &mcoords[i][0], &mcoords[i][1]);
+        &region->v2d, (short)loc[0], (short)loc[1], &mcoords[i][0], &mcoords[i][1]);
     i++;
     if (i >= 256) {
       break;
@@ -368,12 +366,12 @@ static int node_add_file_exec(bContext *C, wmOperator *op)
 
 static int node_add_file_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
   SpaceNode *snode = CTX_wm_space_node(C);
 
   /* convert mouse coordinates to v2d space */
   UI_view2d_region_to_view(
-      &ar->v2d, event->mval[0], event->mval[1], &snode->cursor[0], &snode->cursor[1]);
+      &region->v2d, event->mval[0], event->mval[1], &snode->cursor[0], &snode->cursor[1]);
 
   snode->cursor[0] /= UI_DPI_FAC;
   snode->cursor[1] /= UI_DPI_FAC;
@@ -382,9 +380,7 @@ static int node_add_file_invoke(bContext *C, wmOperator *op, const wmEvent *even
       RNA_struct_property_is_set(op->ptr, "name")) {
     return node_add_file_exec(C, op);
   }
-  else {
-    return WM_operator_filesel(C, op, event);
-  }
+  return WM_operator_filesel(C, op, event);
 }
 
 void NODE_OT_add_file(wmOperatorType *ot)

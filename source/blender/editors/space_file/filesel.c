@@ -21,33 +21,34 @@
  * \ingroup spfile
  */
 
-#include <string.h>
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 
 /* path/file handling stuff */
 #ifdef WIN32
-#  include <io.h>
-#  include <direct.h>
 #  include "BLI_winstuff.h"
+#  include <direct.h>
+#  include <io.h>
 #else
-#  include <unistd.h>
-#  include <sys/times.h>
 #  include <dirent.h>
+#  include <sys/times.h>
+#  include <unistd.h>
 #endif
 
-#include "DNA_space_types.h"
 #include "DNA_screen_types.h"
+#include "DNA_space_types.h"
 #include "DNA_userdef_types.h"
 
 #include "MEM_guardedalloc.h"
 
 #include "BLI_blenlib.h"
-#include "BLI_utildefines.h"
 #include "BLI_fnmatch.h"
+#include "BLI_math_base.h"
+#include "BLI_utildefines.h"
 
 #include "BLO_readfile.h"
 
@@ -85,7 +86,7 @@ FileSelectParams *ED_fileselect_get_params(struct SpaceFile *sfile)
 
 /**
  * \note RNA_struct_property_is_set_ex is used here because we want
- *       the previously used settings to be used here rather then overriding them */
+ *       the previously used settings to be used here rather than overriding them */
 short ED_fileselect_set_params(SpaceFile *sfile)
 {
   FileSelectParams *params;
@@ -156,7 +157,7 @@ short ED_fileselect_set_params(SpaceFile *sfile)
     }
 
     if (params->dir[0]) {
-      BLI_cleanup_dir(blendfile_path, params->dir);
+      BLI_path_normalize_dir(blendfile_path, params->dir);
       BLI_path_abs(params->dir, blendfile_path);
     }
 
@@ -217,6 +218,9 @@ short ED_fileselect_set_params(SpaceFile *sfile)
     }
     if ((prop = RNA_struct_find_property(op->ptr, "filter_usd"))) {
       params->filter |= RNA_property_boolean_get(op->ptr, prop) ? FILE_TYPE_USD : 0;
+    }
+    if ((prop = RNA_struct_find_property(op->ptr, "filter_volume"))) {
+      params->filter |= RNA_property_boolean_get(op->ptr, prop) ? FILE_TYPE_VOLUME : 0;
     }
     if ((prop = RNA_struct_find_property(op->ptr, "filter_glob"))) {
       /* Protection against pyscripts not setting proper size limit... */
@@ -314,7 +318,7 @@ short ED_fileselect_set_params(SpaceFile *sfile)
 
   folderlist_pushdir(sfile->folders_prev, sfile->params->dir);
 
-  /* switching thumbnails needs to recalc layout [#28809] */
+  /* Switching thumbnails needs to recalc layout T28809. */
   if (sfile->layout) {
     sfile->layout->dirty = true;
   }
@@ -370,7 +374,7 @@ void ED_fileselect_set_params_from_userdef(SpaceFile *sfile)
  * pass its size here so we can store that in the preferences. Otherwise NULL.
  */
 void ED_fileselect_params_to_userdef(SpaceFile *sfile,
-                                     int temp_win_size[2],
+                                     const int temp_win_size[2],
                                      const bool is_maximized)
 {
   UserDef_FileSpaceData *sfile_udata_new = &U.file_space_data;
@@ -413,7 +417,7 @@ void fileselect_file_set(SpaceFile *sfile, const int index)
   }
 }
 
-int ED_fileselect_layout_numfiles(FileLayout *layout, ARegion *ar)
+int ED_fileselect_layout_numfiles(FileLayout *layout, ARegion *region)
 {
   int numfiles;
 
@@ -429,18 +433,17 @@ int ED_fileselect_layout_numfiles(FileLayout *layout, ARegion *ar)
    */
   if (layout->flag & FILE_LAYOUT_HOR) {
     const int x_item = layout->tile_w + (2 * layout->tile_border_x);
-    const int x_view = (int)(BLI_rctf_size_x(&ar->v2d.cur));
+    const int x_view = (int)(BLI_rctf_size_x(&region->v2d.cur));
     const int x_over = x_item - (x_view % x_item);
     numfiles = (int)((float)(x_view + x_over) / (float)(x_item));
     return numfiles * layout->rows;
   }
-  else {
-    const int y_item = layout->tile_h + (2 * layout->tile_border_y);
-    const int y_view = (int)(BLI_rctf_size_y(&ar->v2d.cur)) - layout->offset_top;
-    const int y_over = y_item - (y_view % y_item);
-    numfiles = (int)((float)(y_view + y_over) / (float)(y_item));
-    return numfiles * layout->flow_columns;
-  }
+
+  const int y_item = layout->tile_h + (2 * layout->tile_border_y);
+  const int y_view = (int)(BLI_rctf_size_y(&region->v2d.cur)) - layout->offset_top;
+  const int y_over = y_item - (y_view % y_item);
+  numfiles = (int)((float)(y_view + y_over) / (float)(y_item));
+  return numfiles * layout->flow_columns;
 }
 
 static bool is_inside(int x, int y, int cols, int rows)
@@ -639,7 +642,7 @@ FileAttributeColumnType file_attribute_column_type_find_isect(const View2D *v2d,
 
 float file_string_width(const char *str)
 {
-  uiStyle *style = UI_style_get();
+  const uiStyle *style = UI_style_get();
   float width;
 
   UI_fontstyle_set(&style->widget);
@@ -661,12 +664,12 @@ float file_font_pointsize(void)
 #if 0
   float s;
   char tmp[2] = "X";
-  uiStyle *style = UI_style_get();
+  const uiStyle *style = UI_style_get();
   UI_fontstyle_set(&style->widget);
   s = BLF_height(style->widget.uifont_id, tmp);
   return style->widget.points;
 #else
-  uiStyle *style = UI_style_get();
+  const uiStyle *style = UI_style_get();
   UI_fontstyle_set(&style->widget);
   return style->widget.points * UI_DPI_FAC;
 #endif
@@ -720,11 +723,11 @@ static void file_attribute_columns_init(const FileSelectParams *params, FileLayo
   layout->attribute_columns[COLUMN_SIZE].text_align = UI_STYLE_TEXT_RIGHT;
 }
 
-void ED_fileselect_init_layout(struct SpaceFile *sfile, ARegion *ar)
+void ED_fileselect_init_layout(struct SpaceFile *sfile, ARegion *region)
 {
   FileSelectParams *params = ED_fileselect_get_params(sfile);
   FileLayout *layout = NULL;
-  View2D *v2d = &ar->v2d;
+  View2D *v2d = &region->v2d;
   int numfiles;
   int textheight;
 
@@ -755,11 +758,11 @@ void ED_fileselect_init_layout(struct SpaceFile *sfile, ARegion *ar)
     layout->attribute_column_header_h = 0;
     layout->offset_top = 0;
     if (layout->flow_columns > 0) {
-      layout->rows = numfiles / layout->flow_columns + 1;  // XXX dirty, modulo is zero
+      layout->rows = divide_ceil_u(numfiles, layout->flow_columns);
     }
     else {
       layout->flow_columns = 1;
-      layout->rows = numfiles + 1;  // XXX dirty, modulo is zero
+      layout->rows = numfiles;
     }
     layout->height = sfile->layout->rows * (layout->tile_h + 2 * layout->tile_border_y) +
                      layout->tile_border_y * 2 - layout->offset_top;
@@ -804,11 +807,11 @@ void ED_fileselect_init_layout(struct SpaceFile *sfile, ARegion *ar)
     file_attribute_columns_init(params, layout);
 
     if (layout->rows > 0) {
-      layout->flow_columns = numfiles / layout->rows + 1;  // XXX dirty, modulo is zero
+      layout->flow_columns = divide_ceil_u(numfiles, layout->rows);
     }
     else {
       layout->rows = 1;
-      layout->flow_columns = numfiles + 1;  // XXX dirty, modulo is zero
+      layout->flow_columns = numfiles;
     }
     layout->width = sfile->layout->flow_columns * (layout->tile_w + 2 * layout->tile_border_x) +
                     layout->tile_border_x * 2;
@@ -817,22 +820,31 @@ void ED_fileselect_init_layout(struct SpaceFile *sfile, ARegion *ar)
   layout->dirty = false;
 }
 
-FileLayout *ED_fileselect_get_layout(struct SpaceFile *sfile, ARegion *ar)
+FileLayout *ED_fileselect_get_layout(struct SpaceFile *sfile, ARegion *region)
 {
   if (!sfile->layout) {
-    ED_fileselect_init_layout(sfile, ar);
+    ED_fileselect_init_layout(sfile, region);
   }
   return sfile->layout;
 }
 
-void ED_file_change_dir(bContext *C)
+/**
+ * Support updating the directory even when this isn't the active space
+ * needed so RNA properties update function isn't context sensitive, see T70255.
+ */
+void ED_file_change_dir_ex(bContext *C, bScreen *screen, ScrArea *area)
 {
-  wmWindowManager *wm = CTX_wm_manager(C);
-  SpaceFile *sfile = CTX_wm_space_file(C);
-  ScrArea *sa = CTX_wm_area(C);
-
+  /* May happen when manipulating non-active spaces. */
+  if (UNLIKELY(area->spacetype != SPACE_FILE)) {
+    return;
+  }
+  SpaceFile *sfile = area->spacedata.first;
   if (sfile->params) {
-    ED_fileselect_clear(wm, sa, sfile);
+    wmWindowManager *wm = CTX_wm_manager(C);
+    Scene *scene = WM_windows_scene_get_from_screen(wm, screen);
+    if (LIKELY(scene != NULL)) {
+      ED_fileselect_clear(wm, scene, sfile);
+    }
 
     /* Clear search string, it is very rare to want to keep that filter while changing dir,
      * and usually very annoying to keep it actually! */
@@ -851,23 +863,28 @@ void ED_file_change_dir(bContext *C)
 
     folderlist_pushdir(sfile->folders_prev, sfile->params->dir);
 
-    file_draw_check(C);
+    file_draw_check_ex(C, area);
   }
+}
+
+void ED_file_change_dir(bContext *C)
+{
+  bScreen *screen = CTX_wm_screen(C);
+  ScrArea *area = CTX_wm_area(C);
+  ED_file_change_dir_ex(C, screen, area);
 }
 
 int file_select_match(struct SpaceFile *sfile, const char *pattern, char *matched_file)
 {
   int match = 0;
 
-  int i;
-  FileDirEntry *file;
   int n = filelist_files_ensure(sfile->files);
 
   /* select any file that matches the pattern, this includes exact match
    * if the user selects a single file by entering the filename
    */
-  for (i = 0; i < n; i++) {
-    file = filelist_file(sfile->files, i);
+  for (int i = 0; i < n; i++) {
+    FileDirEntry *file = filelist_file(sfile->files, i);
     /* Do not check whether file is a file or dir here! Causes T44243
      * (we do accept dirs at this stage). */
     if (fnmatch(pattern, file->relpath, 0) == 0) {
@@ -922,7 +939,7 @@ int autocomplete_directory(struct bContext *C, char *str, void *UNUSED(arg_v))
 
       match = UI_autocomplete_end(autocpl, str);
       if (match == AUTOCOMPLETE_FULL_MATCH) {
-        BLI_add_slash(str);
+        BLI_path_slash_ensure(str);
       }
     }
   }
@@ -939,9 +956,8 @@ int autocomplete_file(struct bContext *C, char *str, void *UNUSED(arg_v))
   if (str[0] && sfile->files) {
     AutoComplete *autocpl = UI_autocomplete_begin(str, FILE_MAX);
     int nentries = filelist_files_ensure(sfile->files);
-    int i;
 
-    for (i = 0; i < nentries; i++) {
+    for (int i = 0; i < nentries; i++) {
       FileDirEntry *file = filelist_file(sfile->files, i);
       UI_autocomplete_update_name(autocpl, file->relpath);
     }
@@ -951,11 +967,11 @@ int autocomplete_file(struct bContext *C, char *str, void *UNUSED(arg_v))
   return match;
 }
 
-void ED_fileselect_clear(wmWindowManager *wm, ScrArea *sa, SpaceFile *sfile)
+void ED_fileselect_clear(wmWindowManager *wm, Scene *owner_scene, SpaceFile *sfile)
 {
-  /* only NULL in rare cases - [#29734] */
+  /* only NULL in rare cases - T29734. */
   if (sfile->files) {
-    filelist_readjob_stop(wm, sa);
+    filelist_readjob_stop(wm, owner_scene);
     filelist_freelib(sfile->files);
     filelist_clear(sfile->files);
   }
@@ -964,7 +980,7 @@ void ED_fileselect_clear(wmWindowManager *wm, ScrArea *sa, SpaceFile *sfile)
   WM_main_add_notifier(NC_SPACE | ND_SPACE_FILE_LIST, NULL);
 }
 
-void ED_fileselect_exit(wmWindowManager *wm, ScrArea *sa, SpaceFile *sfile)
+void ED_fileselect_exit(wmWindowManager *wm, Scene *owner_scene, SpaceFile *sfile)
 {
   if (!sfile) {
     return;
@@ -990,7 +1006,7 @@ void ED_fileselect_exit(wmWindowManager *wm, ScrArea *sa, SpaceFile *sfile)
   folderlist_free(sfile->folders_next);
 
   if (sfile->files) {
-    ED_fileselect_clear(wm, sa, sfile);
+    ED_fileselect_clear(wm, owner_scene, sfile);
     filelist_free(sfile->files);
     MEM_freeN(sfile->files);
     sfile->files = NULL;

@@ -21,8 +21,8 @@
  * \ingroup pythonintern
  */
 
-#include <Python.h>
 #include "BLI_utildefines.h"
+#include <Python.h>
 
 #include "bpy_app_usd.h"
 
@@ -101,7 +101,7 @@ PyObject *BPY_app_usd_struct(void)
   BlenderAppUSDType.tp_init = NULL;
   BlenderAppUSDType.tp_new = NULL;
   BlenderAppUSDType.tp_hash = (hashfunc)
-      _Py_HashPointer; /* without this we can't do set(sys.modules) [#29635] */
+      _Py_HashPointer; /* without this we can't do set(sys.modules) T29635. */
 
   return ret;
 }

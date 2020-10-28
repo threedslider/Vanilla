@@ -21,8 +21,8 @@
 #include "BPy_UnaryFunction1DVec2f.h"
 
 #include "../BPy_Convert.h"
-#include "../BPy_Interface1D.h"
 #include "../BPy_IntegrationType.h"
+#include "../BPy_Interface1D.h"
 
 #include "UnaryFunction1D_Vec2f/BPy_Normal2DF1D.h"
 #include "UnaryFunction1D_Vec2f/BPy_Orientation2DF1D.h"
@@ -71,13 +71,10 @@ static char UnaryFunction1DVec2f___doc__[] =
     ":class:`Interface1D` and return a 2D vector.\n"
     "\n"
     ".. method:: __init__()\n"
+    "            __init__(integration_type)\n"
     "\n"
-    "   Default constructor.\n"
-    "\n"
-    ".. method:: __init__(integration_type)\n"
-    "\n"
-    "   Builds a unary 1D function using the integration method given as\n"
-    "   argument.\n"
+    "   Builds a unary 1D function using the default constructor\n"
+    "   or the integration method given as an argument.\n"
     "\n"
     "   :arg integration_type: An integration method.\n"
     "   :type integration_type: :class:`IntegrationType`\n";
@@ -108,9 +105,7 @@ static int UnaryFunction1DVec2f___init__(BPy_UnaryFunction1DVec2f *self,
 
 static void UnaryFunction1DVec2f___dealloc__(BPy_UnaryFunction1DVec2f *self)
 {
-  if (self->uf1D_vec2f) {
-    delete self->uf1D_vec2f;
-  }
+  delete self->uf1D_vec2f;
   UnaryFunction1D_Type.tp_dealloc((PyObject *)self);
 }
 

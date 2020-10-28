@@ -25,15 +25,15 @@
 #  include <io.h>
 #endif
 
-#include "BLI_utildefines.h"
 #include "BLI_fileops.h"
+#include "BLI_utildefines.h"
 
 #include "MEM_guardedalloc.h"
 
 #include "imbuf.h"
 
-#include "IMB_imbuf_types.h"
 #include "IMB_imbuf.h"
+#include "IMB_imbuf_types.h"
 
 #include "IMB_filetype.h"
 
@@ -286,7 +286,7 @@ static bool dumptarga(struct ImBuf *ibuf, FILE *file)
   return 1;
 }
 
-int imb_savetarga(struct ImBuf *ibuf, const char *name, int flags)
+int imb_savetarga(struct ImBuf *ibuf, const char *filepath, int flags)
 {
   char buf[20] = {0};
   FILE *fildes;
@@ -321,7 +321,7 @@ int imb_savetarga(struct ImBuf *ibuf, const char *name, int flags)
   if (ibuf->planes == 32) {
     buf[17] |= 0x08;
   }
-  fildes = BLI_fopen(name, "wb");
+  fildes = BLI_fopen(filepath, "wb");
   if (!fildes) {
     return 0;
   }

@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BKE_CONSTRAINT_H__
-#define __BKE_CONSTRAINT_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -145,6 +144,11 @@ struct bConstraint *BKE_constraint_duplicate_ex(struct bConstraint *src,
                                                 const int flag,
                                                 const bool do_extern);
 
+struct bConstraint *BKE_constraint_copy_for_pose(struct Object *ob,
+                                                 struct bPoseChannel *pchan,
+                                                 struct bConstraint *src);
+struct bConstraint *BKE_constraint_copy_for_object(struct Object *ob, struct bConstraint *src);
+
 void BKE_constraints_free(struct ListBase *list);
 void BKE_constraints_free_ex(struct ListBase *list, bool do_id_user);
 void BKE_constraints_copy(struct ListBase *dst, const struct ListBase *src, bool do_extern);
@@ -179,6 +183,8 @@ bool BKE_constraint_remove_ex(ListBase *list,
                               bool clear_dep);
 bool BKE_constraint_remove(ListBase *list, struct bConstraint *con);
 
+void BKE_constraint_panel_expand(struct bConstraint *con);
+
 /* Constraints + Proxies function prototypes */
 void BKE_constraints_proxylocal_extract(struct ListBase *dst, struct ListBase *src);
 bool BKE_constraints_proxylocked_owner(struct Object *ob, struct bPoseChannel *pchan);
@@ -191,13 +197,17 @@ struct bConstraintOb *BKE_constraints_make_evalob(struct Depsgraph *depsgraph,
                                                   short datatype);
 void BKE_constraints_clear_evalob(struct bConstraintOb *cob);
 
-void BKE_constraint_mat_convertspace(
-    struct Object *ob, struct bPoseChannel *pchan, float mat[4][4], short from, short to);
+void BKE_constraint_mat_convertspace(struct Object *ob,
+                                     struct bPoseChannel *pchan,
+                                     float mat[4][4],
+                                     short from,
+                                     short to,
+                                     const bool keep_scale);
 
 void BKE_constraint_target_matrix_get(struct Depsgraph *depsgraph,
                                       struct Scene *scene,
                                       struct bConstraint *con,
-                                      int n,
+                                      int index,
                                       short ownertype,
                                       void *ownerdata,
                                       float mat[4][4],
@@ -214,6 +224,4 @@ void BKE_constraints_solve(struct Depsgraph *depsgraph,
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

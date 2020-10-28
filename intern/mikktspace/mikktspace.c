@@ -22,12 +22,12 @@
  */
 
 #include <assert.h>
-#include <stdio.h>
-#include <math.h>
-#include <string.h>
 #include <float.h>
-#include <stdlib.h>
 #include <limits.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "mikktspace.h"
 
@@ -1076,7 +1076,7 @@ static tbool AssignRecur(const int piTriListIn[],
     return TFALSE;
   if ((pMyTriInfo->iFlag & GROUP_WITH_ANY) != 0) {
     // first to group with a group-with-anything triangle
-    // determines it's orientation.
+    // determines its orientation.
     // This is the only existing order dependency in the code!!
     if (pMyTriInfo->AssignedGroup[0] == NULL && pMyTriInfo->AssignedGroup[1] == NULL &&
         pMyTriInfo->AssignedGroup[2] == NULL) {

@@ -20,10 +20,10 @@
 
 #include "COM_ExecutionSystem.h"
 
-#include "COM_KeyingOperation.h"
 #include "COM_KeyingBlurOperation.h"
-#include "COM_KeyingDespillOperation.h"
 #include "COM_KeyingClipOperation.h"
+#include "COM_KeyingDespillOperation.h"
+#include "COM_KeyingOperation.h"
 
 #include "COM_MathBaseOperation.h"
 
@@ -32,7 +32,7 @@
 
 #include "COM_DilateErodeOperation.h"
 
-#include "COM_SetAlphaOperation.h"
+#include "COM_KeyingSetAlphaOperation.h"
 
 #include "COM_GaussianAlphaXBlurOperation.h"
 #include "COM_GaussianAlphaYBlurOperation.h"
@@ -322,7 +322,7 @@ void KeyingNode::convertToOperations(NodeConverter &converter,
   }
 
   /* set alpha channel to output image */
-  SetAlphaOperation *alphaOperation = new SetAlphaOperation();
+  KeyingSetAlphaOperation *alphaOperation = new KeyingSetAlphaOperation();
   converter.addOperation(alphaOperation);
 
   converter.mapInputSocket(inputImage, alphaOperation->getInputSocket(0));

@@ -353,6 +353,8 @@ set(SRC
   operations/COM_KeyingDespillOperation.h
   operations/COM_KeyingOperation.cpp
   operations/COM_KeyingOperation.h
+  operations/COM_KeyingSetAlphaOperation.cpp
+  operations/COM_KeyingSetAlphaOperation.h
 
   operations/COM_ColorSpillOperation.cpp
   operations/COM_ColorSpillOperation.h
@@ -552,8 +554,11 @@ list(APPEND INC
   ${CMAKE_CURRENT_BINARY_DIR}/operations
 )
 
-data_to_c(${CMAKE_CURRENT_SOURCE_DIR}/operations/COM_OpenCLKernels.cl
-          ${CMAKE_CURRENT_BINARY_DIR}/operations/COM_OpenCLKernels.cl.h SRC)
+data_to_c(
+  ${CMAKE_CURRENT_SOURCE_DIR}/operations/COM_OpenCLKernels.cl
+  ${CMAKE_CURRENT_BINARY_DIR}/operations/COM_OpenCLKernels.cl.h
+  SRC
+)
 
 add_definitions(-DCL_USE_DEPRECATED_OPENCL_1_1_APIS)
 

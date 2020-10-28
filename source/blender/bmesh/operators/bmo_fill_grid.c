@@ -96,9 +96,7 @@ static void quad_verts_to_barycentric_tri(float tri[3][3],
 #endif
 
 /* -------------------------------------------------------------------- */
-/* Handle Loop Pairs */
-
-/** \name Loop Pairs
+/** \name Handle Loop Pairs
  * \{ */
 
 /**
@@ -126,7 +124,7 @@ static void bm_loop_pair_from_verts(BMVert *v_a, BMVert *v_b, BMLoop *l_pair[2])
 /**
  * Copy loop pair from one side to the other if either is missing,
  * this simplifies interpolation code so we only need to check if x/y are missing,
- * rather then checking each loop.
+ * rather than checking each loop.
  */
 static void bm_loop_pair_test_copy(BMLoop *l_pair_a[2], BMLoop *l_pair_b[2])
 {
@@ -616,7 +614,14 @@ void bmo_grid_fill_exec(BMesh *bm, BMOperator *op)
   count = BM_mesh_edgeloops_find(bm, &eloops, bm_edge_test_cb, (void *)bm);
 
   if (count != 2) {
-    BMO_error_raise(bm, op, BMERR_INVALID_SELECTION, "Select two edge loops");
+    /* Note that this error message has been adjusted to make sense when called
+     * from the operator 'MESH_OT_fill_grid' which has a 'prepare' pass which can
+     * extract two 'rail' loops from a single edge loop, see T72075. */
+    BMO_error_raise(bm,
+                    op,
+                    BMERR_INVALID_SELECTION,
+                    "Select two edge loops "
+                    "or a single closed edge loop from which two edge loops can be calculated");
     goto cleanup;
   }
 

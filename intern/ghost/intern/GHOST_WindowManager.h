@@ -22,13 +22,12 @@
  * Declaration of GHOST_WindowManager class.
  */
 
-#ifndef __GHOST_WINDOWMANAGER_H__
-#define __GHOST_WINDOWMANAGER_H__
+#pragma once
 
 #include <vector>
 
-#include "GHOST_Rect.h"
 #include "GHOST_IWindow.h"
+#include "GHOST_Rect.h"
 
 /**
  * Manages system windows (platform independent implementation).
@@ -149,5 +148,3 @@ class GHOST_WindowManager {
   MEM_CXX_CLASS_ALLOC_FUNCS("GHOST:GHOST_WindowManager")
 #endif
 };
-
-#endif  // __GHOST_WINDOWMANAGER_H__

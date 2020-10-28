@@ -32,12 +32,12 @@
 #include "DNA_scene_types.h"
 #include "DNA_world_types.h"
 
-#include "BLI_math.h"
+#include "BLI_ghash.h"
 #include "BLI_listbase.h"
-#include "BLI_utildefines.h"
+#include "BLI_math.h"
 #include "BLI_string.h"
 #include "BLI_string_utils.h"
-#include "BLI_ghash.h"
+#include "BLI_utildefines.h"
 
 #include "BKE_main.h"
 #include "BKE_material.h"
@@ -47,7 +47,7 @@
 #include "GPU_material.h"
 #include "GPU_shader.h"
 #include "GPU_texture.h"
-#include "GPU_uniformbuffer.h"
+#include "GPU_uniform_buffer.h"
 
 #include "DRW_engine.h"
 
@@ -70,6 +70,7 @@ struct GPUMaterial {
 
   const void *engine_type; /* attached engine type */
   int options;             /* to identify shader variations (shadow, probe, world background...) */
+  bool is_volume_shader;   /* is volumetric shader */
 
   /* Nodes */
   GPUNodeGraph graph;
@@ -80,17 +81,18 @@ struct GPUMaterial {
   /* XXX: Should be in Material. But it depends on the output node
    * used and since the output selection is different for GPUMaterial...
    */
-  int domain;
+  bool has_volume_output;
+  bool has_surface_output;
 
   /* Only used by Eevee to know which bsdf are used. */
-  int flag;
+  eGPUMatFlag flag;
 
   /* Used by 2.8 pipeline */
-  GPUUniformBuffer *ubo; /* UBOs for shader uniforms. */
+  GPUUniformBuf *ubo; /* UBOs for shader uniforms. */
 
   /* Eevee SSS */
-  GPUUniformBuffer *sss_profile; /* UBO containing SSS profile. */
-  GPUTexture *sss_tex_profile;   /* Texture containing SSS profile. */
+  GPUUniformBuf *sss_profile;  /* UBO containing SSS profile. */
+  GPUTexture *sss_tex_profile; /* Texture containing SSS profile. */
   float sss_enabled;
   float sss_radii[3];
   int sss_samples;
@@ -109,8 +111,8 @@ struct GPUMaterial {
 };
 
 enum {
-  GPU_DOMAIN_SURFACE = (1 << 0),
-  GPU_DOMAIN_VOLUME = (1 << 1),
+  GPU_USE_SURFACE_OUTPUT = (1 << 0),
+  GPU_USE_VOLUME_OUTPUT = (1 << 1),
 };
 
 /* Functions */
@@ -121,7 +123,7 @@ GPUTexture **gpu_material_ramp_texture_row_set(GPUMaterial *mat,
                                                float *pixels,
                                                float *row)
 {
-  /* In order to put all the colorbands into one 1D array texture,
+  /* In order to put all the color-bands into one 1D array texture,
    * we need them to be the same size. */
   BLI_assert(size == CM_TABLE + 1);
   UNUSED_VARS_NDEBUG(size);
@@ -155,7 +157,7 @@ static void gpu_material_ramp_texture_build(GPUMaterial *mat)
   GPUColorBandBuilder *builder = mat->coba_builder;
 
   mat->coba_tex = GPU_texture_create_1d_array(
-      CM_TABLE + 1, builder->current_layer, GPU_RGBA16F, (float *)builder->pixels, NULL);
+      "mat_ramp", CM_TABLE + 1, builder->current_layer, 1, GPU_RGBA16F, (float *)builder->pixels);
 
   MEM_freeN(builder);
   mat->coba_builder = NULL;
@@ -172,13 +174,13 @@ static void gpu_material_free_single(GPUMaterial *material)
     GPU_pass_release(material->pass);
   }
   if (material->ubo != NULL) {
-    GPU_uniformbuffer_free(material->ubo);
+    GPU_uniformbuf_free(material->ubo);
   }
   if (material->sss_tex_profile != NULL) {
     GPU_texture_free(material->sss_tex_profile);
   }
   if (material->sss_profile != NULL) {
-    GPU_uniformbuffer_free(material->sss_profile);
+    GPU_uniformbuf_free(material->sss_profile);
   }
   if (material->coba_tex != NULL) {
     GPU_texture_free(material->coba_tex);
@@ -189,7 +191,7 @@ static void gpu_material_free_single(GPUMaterial *material)
 
 void GPU_material_free(ListBase *gpumaterial)
 {
-  for (LinkData *link = gpumaterial->first; link; link = link->next) {
+  LISTBASE_FOREACH (LinkData *, link, gpumaterial) {
     GPUMaterial *material = link->data;
     gpu_material_free_single(material);
     MEM_freeN(material);
@@ -207,13 +209,18 @@ GPUPass *GPU_material_get_pass(GPUMaterial *material)
   return material->pass;
 }
 
+GPUShader *GPU_material_get_shader(GPUMaterial *material)
+{
+  return material->pass ? GPU_pass_shader_get(material->pass) : NULL;
+}
+
 /* Return can be NULL if it's a world material. */
 Material *GPU_material_get_material(GPUMaterial *material)
 {
   return material->ma;
 }
 
-GPUUniformBuffer *GPU_material_uniform_buffer_get(GPUMaterial *material)
+GPUUniformBuf *GPU_material_uniform_buffer_get(GPUMaterial *material)
 {
   return material->ubo;
 }
@@ -225,7 +232,12 @@ GPUUniformBuffer *GPU_material_uniform_buffer_get(GPUMaterial *material)
  */
 void GPU_material_uniform_buffer_create(GPUMaterial *material, ListBase *inputs)
 {
-  material->ubo = GPU_uniformbuffer_dynamic_create(inputs, NULL);
+#ifndef NDEBUG
+  const char *name = material->name;
+#else
+  const char *name = "Material";
+#endif
+  material->ubo = GPU_uniformbuf_create_from_list(inputs, name);
 }
 
 /* Eevee Subsurface scattering. */
@@ -304,12 +316,11 @@ static float eval_profile(float r, short falloff_type, float sharpness, float pa
   if (falloff_type == SHD_SUBSURFACE_BURLEY || falloff_type == SHD_SUBSURFACE_RANDOM_WALK) {
     return burley_profile(r, param) / BURLEY_TRUNCATE_CDF;
   }
-  else if (falloff_type == SHD_SUBSURFACE_CUBIC) {
+  if (falloff_type == SHD_SUBSURFACE_CUBIC) {
     return cubic_profile(r, param, sharpness);
   }
-  else {
-    return gaussian_profile(r, param);
-  }
+
+  return gaussian_profile(r, param);
 }
 
 /* Resolution for each sample of the precomputed kernel profile */
@@ -433,7 +444,7 @@ static void compute_sss_translucence_kernel(const GPUSssKernelData *kd,
                                             float **output)
 {
   float(*texels)[4];
-  texels = MEM_callocN(sizeof(float) * 4 * resolution, "compute_sss_translucence_kernel");
+  texels = MEM_callocN(sizeof(float[4]) * resolution, "compute_sss_translucence_kernel");
   *output = (float *)texels;
 
   /* Last texel should be black, hence the - 1. */
@@ -490,8 +501,8 @@ static void compute_sss_translucence_kernel(const GPUSssKernelData *kd,
 
 void GPU_material_sss_profile_create(GPUMaterial *material,
                                      float radii[3],
-                                     short *falloff_type,
-                                     float *sharpness)
+                                     const short *falloff_type,
+                                     const float *sharpness)
 {
   copy_v3_v3(material->sss_radii, radii);
   material->sss_falloff = (falloff_type) ? *falloff_type : 0.0;
@@ -501,13 +512,13 @@ void GPU_material_sss_profile_create(GPUMaterial *material,
 
   /* Update / Create UBO */
   if (material->sss_profile == NULL) {
-    material->sss_profile = GPU_uniformbuffer_create(sizeof(GPUSssKernelData), NULL, NULL);
+    material->sss_profile = GPU_uniformbuf_create(sizeof(GPUSssKernelData));
   }
 }
 
-struct GPUUniformBuffer *GPU_material_sss_profile_get(GPUMaterial *material,
-                                                      int sample_len,
-                                                      GPUTexture **tex_profile)
+struct GPUUniformBuf *GPU_material_sss_profile_get(GPUMaterial *material,
+                                                   int sample_len,
+                                                   GPUTexture **tex_profile)
 {
   if (!material->sss_enabled) {
     return NULL;
@@ -524,7 +535,7 @@ struct GPUUniformBuffer *GPU_material_sss_profile_get(GPUMaterial *material,
     compute_sss_kernel(&kd, material->sss_radii, sample_len, material->sss_falloff, sharpness);
 
     /* Update / Create UBO */
-    GPU_uniformbuffer_update(material->sss_profile, &kd);
+    GPU_uniformbuf_update(material->sss_profile, &kd);
 
     /* Update / Create Tex */
     float *translucence_profile;
@@ -535,7 +546,8 @@ struct GPUUniformBuffer *GPU_material_sss_profile_get(GPUMaterial *material,
       GPU_texture_free(material->sss_tex_profile);
     }
 
-    material->sss_tex_profile = GPU_texture_create_1d(64, GPU_RGBA16F, translucence_profile, NULL);
+    material->sss_tex_profile = GPU_texture_create_1d(
+        "sss_tex_profile", 64, 1, GPU_RGBA16F, translucence_profile);
 
     MEM_freeN(translucence_profile);
 
@@ -549,9 +561,9 @@ struct GPUUniformBuffer *GPU_material_sss_profile_get(GPUMaterial *material,
   return material->sss_profile;
 }
 
-struct GPUUniformBuffer *GPU_material_create_sss_profile_ubo(void)
+struct GPUUniformBuf *GPU_material_create_sss_profile_ubo(void)
 {
-  return GPU_uniformbuffer_create(sizeof(GPUSssKernelData), NULL, NULL);
+  return GPU_uniformbuf_create(sizeof(GPUSssKernelData));
 }
 
 #undef SSS_EXPONENT
@@ -565,6 +577,11 @@ ListBase GPU_material_attributes(GPUMaterial *material)
 ListBase GPU_material_textures(GPUMaterial *material)
 {
   return material->graph.textures;
+}
+
+ListBase GPU_material_volume_grids(GPUMaterial *material)
+{
+  return material->graph.volume_grids;
 }
 
 void GPU_material_output_link(GPUMaterial *material, GPUNodeLink *link)
@@ -592,14 +609,19 @@ eGPUMaterialStatus GPU_material_status(GPUMaterial *mat)
 
 /* Code generation */
 
-bool GPU_material_use_domain_surface(GPUMaterial *mat)
+bool GPU_material_has_surface_output(GPUMaterial *mat)
 {
-  return (mat->domain & GPU_DOMAIN_SURFACE);
+  return mat->has_surface_output;
 }
 
-bool GPU_material_use_domain_volume(GPUMaterial *mat)
+bool GPU_material_has_volume_output(GPUMaterial *mat)
 {
-  return (mat->domain & GPU_DOMAIN_VOLUME);
+  return mat->has_volume_output;
+}
+
+bool GPU_material_is_volume_shader(GPUMaterial *mat)
+{
+  return mat->is_volume_shader;
 }
 
 void GPU_material_flag_set(GPUMaterial *mat, eGPUMatFlag flag)
@@ -616,7 +638,7 @@ GPUMaterial *GPU_material_from_nodetree_find(ListBase *gpumaterials,
                                              const void *engine_type,
                                              int options)
 {
-  for (LinkData *link = gpumaterials->first; link; link = link->next) {
+  LISTBASE_FOREACH (LinkData *, link, gpumaterials) {
     GPUMaterial *current_material = (GPUMaterial *)link->data;
     if (current_material->engine_type == engine_type && current_material->options == options) {
       return current_material;
@@ -636,12 +658,14 @@ GPUMaterial *GPU_material_from_nodetree(Scene *scene,
                                         struct bNodeTree *ntree,
                                         ListBase *gpumaterials,
                                         const void *engine_type,
-                                        int options,
+                                        const int options,
+                                        const bool is_volume_shader,
                                         const char *vert_code,
                                         const char *geom_code,
                                         const char *frag_lib,
                                         const char *defines,
-                                        const char *name)
+                                        const char *name,
+                                        GPUMaterialEvalCallbackFn callback)
 {
   LinkData *link;
   bool has_volume_output, has_surface_output;
@@ -649,12 +673,16 @@ GPUMaterial *GPU_material_from_nodetree(Scene *scene,
   /* Caller must re-use materials. */
   BLI_assert(GPU_material_from_nodetree_find(gpumaterials, engine_type, options) == NULL);
 
+  /* HACK: Eevee assume this to create Ghash keys. */
+  BLI_assert(sizeof(GPUPass) > 16);
+
   /* allocate material */
   GPUMaterial *mat = MEM_callocN(sizeof(GPUMaterial), "GPUMaterial");
   mat->ma = ma;
   mat->scene = scene;
   mat->engine_type = engine_type;
   mat->options = options;
+  mat->is_volume_shader = is_volume_shader;
 #ifndef NDEBUG
   BLI_snprintf(mat->name, sizeof(mat->name), "%s", name);
 #else
@@ -670,10 +698,13 @@ GPUMaterial *GPU_material_from_nodetree(Scene *scene,
 
   gpu_material_ramp_texture_build(mat);
 
-  SET_FLAG_FROM_TEST(mat->domain, has_surface_output, GPU_DOMAIN_SURFACE);
-  SET_FLAG_FROM_TEST(mat->domain, has_volume_output, GPU_DOMAIN_VOLUME);
+  mat->has_surface_output = has_surface_output;
+  mat->has_volume_output = has_volume_output;
 
   if (mat->graph.outlink) {
+    if (callback) {
+      callback(mat, options, &vert_code, &geom_code, &frag_lib, &defines);
+    }
     /* HACK: this is only for eevee. We add the define here after the nodetree evaluation. */
     if (GPU_material_flag_get(mat, GPU_MATFLAG_SSS)) {
       defines = BLI_string_joinN(defines,
@@ -710,7 +741,7 @@ GPUMaterial *GPU_material_from_nodetree(Scene *scene,
     gpu_node_graph_free(&mat->graph);
   }
 
-  /* Only free after GPU_pass_shader_get where GPUUniformBuffer
+  /* Only free after GPU_pass_shader_get where GPUUniformBuf
    * read data from the local tree. */
   ntreeFreeLocalTree(localtree);
   MEM_freeN(localtree);

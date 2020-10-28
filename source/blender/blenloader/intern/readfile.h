@@ -22,21 +22,30 @@
  * \ingroup blenloader
  */
 
-#ifndef __READFILE_H__
-#define __READFILE_H__
+#pragma once
 
-#include "zlib.h"
+#ifdef WIN32
+#  include "BLI_winstuff.h"
+#endif
+
 #include "DNA_sdna_types.h"
 #include "DNA_space_types.h"
 #include "DNA_windowmanager_types.h" /* for ReportType */
+#include "zlib.h"
 
+struct BLOCacheStorage;
+struct GSet;
+struct IDNameLib_Map;
 struct Key;
 struct MemFile;
 struct Object;
 struct OldNewMap;
 struct PartEff;
 struct ReportList;
+struct UserDef;
 struct View3D;
+
+typedef struct IDNameLib_Map IDNameLib_Map;
 
 enum eFileDataFlag {
   FD_FLAGS_SWITCH_ENDIAN = 1 << 0,
@@ -57,7 +66,10 @@ enum eFileDataFlag {
 typedef int64_t off64_t;
 #endif
 
-typedef int(FileDataReadFn)(struct FileData *filedata, void *buffer, unsigned int size);
+typedef ssize_t(FileDataReadFn)(struct FileData *filedata,
+                                void *buffer,
+                                size_t size,
+                                bool *r_is_memchunk_identical);
 typedef off64_t(FileDataSeekFn)(struct FileData *filedata, off64_t offset, int whence);
 
 typedef struct FileData {
@@ -65,8 +77,8 @@ typedef struct FileData {
   ListBase bhead_list;
   enum eFileDataFlag flags;
   bool is_eof;
-  int buffersize;
-  int64_t file_offset;
+  size_t buffersize;
+  off64_t file_offset;
 
   FileDataReadFn *read;
   FileDataSeekFn *seek;
@@ -78,6 +90,9 @@ typedef struct FileData {
   const char *buffer;
   /** Variables needed for reading from memfile (undo). */
   struct MemFile *memfile;
+  /** Whether we are undoing (< 0) or redoing (> 0), used to choose which 'unchanged' flag to use
+   * to detect unchanged data from memfile. */
+  short undo_direction;
 
   /** Variables needed for reading from file. */
   gzFile gzfiledes;
@@ -92,6 +107,7 @@ typedef struct FileData {
   const struct SDNA *memsdna;
   /** Array of #eSDNA_StructCompare. */
   const char *compflags;
+  struct DNA_ReconstructInfo *reconstruct_info;
 
   int fileversion;
   /** Used to retrieve ID names from (bhead+1). */
@@ -105,11 +121,8 @@ typedef struct FileData {
   struct OldNewMap *datamap;
   struct OldNewMap *globmap;
   struct OldNewMap *libmap;
-  struct OldNewMap *imamap;
-  struct OldNewMap *movieclipmap;
-  struct OldNewMap *scenemap;
-  struct OldNewMap *soundmap;
   struct OldNewMap *packedmap;
+  struct BLOCacheStorage *cache_storage;
 
   struct BHeadSort *bheadmap;
   int tot_bheadmap;
@@ -120,6 +133,7 @@ typedef struct FileData {
   ListBase *mainlist;
   /** Used for undo. */
   ListBase *old_mainlist;
+  struct IDNameLib_Map *old_idmap;
 
   struct ReportList *reports;
 } FileData;
@@ -134,21 +148,20 @@ void blo_split_main(ListBase *mainlist, struct Main *main);
 BlendFileData *blo_read_file_internal(FileData *fd, const char *filepath);
 
 FileData *blo_filedata_from_file(const char *filepath, struct ReportList *reports);
-FileData *blo_filedata_from_memory(const void *buffer, int buffersize, struct ReportList *reports);
-FileData *blo_filedata_from_memfile(struct MemFile *memfile, struct ReportList *reports);
+FileData *blo_filedata_from_memory(const void *mem, int memsize, struct ReportList *reports);
+FileData *blo_filedata_from_memfile(struct MemFile *memfile,
+                                    const struct BlendFileReadParams *params,
+                                    struct ReportList *reports);
 
 void blo_clear_proxy_pointers_from_lib(struct Main *oldmain);
-void blo_make_image_pointer_map(FileData *fd, struct Main *oldmain);
-void blo_end_image_pointer_map(FileData *fd, struct Main *oldmain);
-void blo_make_scene_pointer_map(FileData *fd, struct Main *oldmain);
-void blo_end_scene_pointer_map(FileData *fd, struct Main *oldmain);
-void blo_make_movieclip_pointer_map(FileData *fd, struct Main *oldmain);
-void blo_end_movieclip_pointer_map(FileData *fd, struct Main *oldmain);
-void blo_make_sound_pointer_map(FileData *fd, struct Main *oldmain);
-void blo_end_sound_pointer_map(FileData *fd, struct Main *oldmain);
 void blo_make_packed_pointer_map(FileData *fd, struct Main *oldmain);
 void blo_end_packed_pointer_map(FileData *fd, struct Main *oldmain);
 void blo_add_library_pointer_map(ListBase *old_mainlist, FileData *fd);
+void blo_make_old_idmap_from_main(FileData *fd, struct Main *bmain);
+
+void blo_cache_storage_init(FileData *fd, struct Main *bmain);
+void blo_cache_storage_old_bmain_clear(FileData *fd, struct Main *bmain_old);
+void blo_cache_storage_end(FileData *fd);
 
 void blo_filedata_free(FileData *fd);
 
@@ -177,17 +190,23 @@ void blo_do_version_old_trackto_to_constraints(struct Object *ob);
 void blo_do_versions_view3d_split_250(struct View3D *v3d, struct ListBase *regions);
 void blo_do_versions_key_uidgen(struct Key *key);
 
+void blo_do_versions_userdef(struct UserDef *userdef);
+
 void blo_do_versions_pre250(struct FileData *fd, struct Library *lib, struct Main *bmain);
 void blo_do_versions_250(struct FileData *fd, struct Library *lib, struct Main *bmain);
 void blo_do_versions_260(struct FileData *fd, struct Library *lib, struct Main *bmain);
 void blo_do_versions_270(struct FileData *fd, struct Library *lib, struct Main *bmain);
 void blo_do_versions_280(struct FileData *fd, struct Library *lib, struct Main *bmain);
+void blo_do_versions_290(struct FileData *fd, struct Library *lib, struct Main *bmain);
 void blo_do_versions_cycles(struct FileData *fd, struct Library *lib, struct Main *bmain);
 
 void do_versions_after_linking_250(struct Main *bmain);
 void do_versions_after_linking_260(struct Main *bmain);
 void do_versions_after_linking_270(struct Main *bmain);
-void do_versions_after_linking_280(struct Main *bmain, ReportList *reports);
+void do_versions_after_linking_280(struct Main *bmain, struct ReportList *reports);
+void do_versions_after_linking_290(struct Main *bmain, struct ReportList *reports);
 void do_versions_after_linking_cycles(struct Main *bmain);
 
-#endif
+/* This is rather unfortunate to have to expose this here, but better use that nasty hack in
+ * do_version than readfile itself. */
+void *blo_read_get_new_globaldata_address(struct FileData *fd, const void *adr);

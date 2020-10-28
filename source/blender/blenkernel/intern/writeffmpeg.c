@@ -20,8 +20,8 @@
  */
 
 #ifdef WITH_FFMPEG
-#  include <string.h>
 #  include <stdio.h>
+#  include <string.h>
 
 #  include <stdlib.h>
 
@@ -52,8 +52,8 @@
 
 /* This needs to be included after BLI_math_base.h otherwise it will redefine some math defines
  * like M_SQRT1_2 leading to warnings with MSVC */
-#  include <libavformat/avformat.h>
 #  include <libavcodec/avcodec.h>
+#  include <libavformat/avformat.h>
 #  include <libavutil/imgutils.h>
 #  include <libavutil/rational.h>
 #  include <libavutil/samplefmt.h>
@@ -114,8 +114,11 @@ typedef struct FFMpegContext {
 static void ffmpeg_dict_set_int(AVDictionary **dict, const char *key, int value);
 static void ffmpeg_dict_set_float(AVDictionary **dict, const char *key, float value);
 static void ffmpeg_set_expert_options(RenderData *rd);
-static void ffmpeg_filepath_get(
-    FFMpegContext *context, char *string, struct RenderData *rd, bool preview, const char *suffix);
+static void ffmpeg_filepath_get(FFMpegContext *context,
+                                char *string,
+                                const struct RenderData *rd,
+                                bool preview,
+                                const char *suffix);
 
 /* Delete a picture buffer */
 
@@ -246,7 +249,7 @@ static int write_audio_frame(FFMpegContext *context)
 
   return 0;
 }
-#  endif  // #ifdef WITH_AUDASPACE
+#  endif /* #ifdef WITH_AUDASPACE */
 
 /* Allocate a temporary frame */
 static AVFrame *alloc_picture(int pix_fmt, int width, int height)
@@ -338,7 +341,7 @@ static const char **get_file_extensions(int format)
 
 /* Write a frame to the output file */
 static int write_video_frame(
-    FFMpegContext *context, RenderData *rd, int cfra, AVFrame *frame, ReportList *reports)
+    FFMpegContext *context, const RenderData *rd, int cfra, AVFrame *frame, ReportList *reports)
 {
   int got_output;
   int ret, success = 1;
@@ -600,10 +603,15 @@ static AVStream *alloc_video_stream(FFMpegContext *context,
     c->time_base.num = (int)num;
   }
 
+  st->time_base = c->time_base;
+
   c->gop_size = context->ffmpeg_gop_size;
   c->max_b_frames = context->ffmpeg_max_b_frames;
 
-  if (context->ffmpeg_crf >= 0) {
+  if (context->ffmpeg_type == FFMPEG_WEBM && context->ffmpeg_crf == 0) {
+    ffmpeg_dict_set_int(&opts, "lossless", 1);
+  }
+  else if (context->ffmpeg_crf >= 0) {
     ffmpeg_dict_set_int(&opts, "crf", context->ffmpeg_crf);
   }
   else {
@@ -872,9 +880,9 @@ static AVStream *alloc_audio_stream(FFMpegContext *context,
 #  endif
 
   if (c->frame_size == 0) {
-    // used to be if ((c->codec_id >= CODEC_ID_PCM_S16LE) && (c->codec_id <= CODEC_ID_PCM_DVD))
-    // not sure if that is needed anymore, so let's try out if there are any
-    // complaints regarding some ffmpeg versions users might have
+    /* Used to be if ((c->codec_id >= CODEC_ID_PCM_S16LE) && (c->codec_id <= CODEC_ID_PCM_DVD))
+     * not sure if that is needed anymore, so let's try out if there are any
+     * complaints regarding some FFmpeg versions users might have. */
     context->audio_input_samples = FF_MIN_BUFFER_SIZE * 8 / c->bits_per_coded_sample / c->channels;
   }
   else {
@@ -1217,7 +1225,7 @@ static void flush_ffmpeg(FFMpegContext *context)
 
 /* Get the output filename-- similar to the other output formats */
 static void ffmpeg_filepath_get(
-    FFMpegContext *context, char *string, RenderData *rd, bool preview, const char *suffix)
+    FFMpegContext *context, char *string, const RenderData *rd, bool preview, const char *suffix)
 {
   char autosplit[20];
 
@@ -1282,13 +1290,13 @@ static void ffmpeg_filepath_get(
   BLI_path_suffix(string, FILE_MAX, suffix, "");
 }
 
-void BKE_ffmpeg_filepath_get(char *string, RenderData *rd, bool preview, const char *suffix)
+void BKE_ffmpeg_filepath_get(char *string, const RenderData *rd, bool preview, const char *suffix)
 {
   ffmpeg_filepath_get(NULL, string, rd, preview, suffix);
 }
 
 int BKE_ffmpeg_start(void *context_v,
-                     struct Scene *scene,
+                     const struct Scene *scene,
                      RenderData *rd,
                      int rectx,
                      int recty,
@@ -1669,9 +1677,9 @@ static void ffmpeg_set_expert_options(RenderData *rd)
     /* This breaks compatibility for QT. */
     // BKE_ffmpeg_property_add_string(rd, "video", "flags:loop");
     BKE_ffmpeg_property_add_string(rd, "video", "cmp:chroma");
-    BKE_ffmpeg_property_add_string(rd, "video", "partitions:parti4x4");  // Deprecated.
-    BKE_ffmpeg_property_add_string(rd, "video", "partitions:partp8x8");  // Deprecated.
-    BKE_ffmpeg_property_add_string(rd, "video", "partitions:partb8x8");  // Deprecated.
+    BKE_ffmpeg_property_add_string(rd, "video", "partitions:parti4x4"); /* Deprecated. */
+    BKE_ffmpeg_property_add_string(rd, "video", "partitions:partp8x8"); /* Deprecated. */
+    BKE_ffmpeg_property_add_string(rd, "video", "partitions:partb8x8"); /* Deprecated. */
     BKE_ffmpeg_property_add_string(rd, "video", "me:hex");
     BKE_ffmpeg_property_add_string(rd, "video", "subq:6");
     BKE_ffmpeg_property_add_string(rd, "video", "me_range:16");
@@ -1743,7 +1751,7 @@ void BKE_ffmpeg_preset_set(RenderData *rd, int preset)
       rd->ffcodecdata.type = FFMPEG_MPEG2;
       rd->ffcodecdata.video_bitrate = 6000;
 
-      /* Don't set resolution, see [#21351]
+      /* Don't set resolution, see T21351.
        * rd->xsch = 720;
        * rd->ysch = isntsc ? 480 : 576; */
 
@@ -1781,7 +1789,7 @@ void BKE_ffmpeg_preset_set(RenderData *rd, int preset)
         rd->ffcodecdata.codec = AV_CODEC_ID_MPEG4;
       }
       else if (preset == FFMPEG_PRESET_THEORA) {
-        rd->ffcodecdata.type = FFMPEG_OGG;  // XXX broken
+        rd->ffcodecdata.type = FFMPEG_OGG; /* XXX broken */
         rd->ffcodecdata.codec = AV_CODEC_ID_THEORA;
       }
 
@@ -1846,7 +1854,7 @@ void BKE_ffmpeg_codec_settings_verify(RenderData *rd)
   ffmpeg_set_expert_options(rd);
 }
 
-bool BKE_ffmpeg_alpha_channel_is_supported(RenderData *rd)
+bool BKE_ffmpeg_alpha_channel_is_supported(const RenderData *rd)
 {
   int codec = rd->ffcodecdata.codec;
 

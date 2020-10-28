@@ -25,16 +25,16 @@
 #include "CLG_log.h"
 
 #include "DNA_ID.h"
-#include "DNA_screen_types.h"
 #include "DNA_scene_types.h"
+#include "DNA_screen_types.h"
 #include "DNA_userdef_types.h"
 #include "DNA_windowmanager_types.h"
 
 #include "BLT_translation.h"
 
 #include "BLI_blenlib.h"
-#include "BLI_utildefines.h"
 #include "BLI_ghash.h"
+#include "BLI_utildefines.h"
 
 #include "BKE_context.h"
 #include "BKE_idprop.h"
@@ -95,6 +95,7 @@ void WM_operatortype_iter(GHashIterator *ghi)
   BLI_ghashIterator_init(ghi, global_ops_hash);
 }
 
+/* -------------------------------------------------------------------- */
 /** \name Operator Type Append
  * \{ */
 
@@ -199,7 +200,7 @@ static void operatortype_ghash_free_cb(wmOperatorType *ot)
     wm_operatortype_free_macro(ot);
   }
 
-  if (ot->ext.srna) {
+  if (ot->rna_ext.srna) {
     /* python operator, allocs own string */
     MEM_freeN((void *)ot->idname);
   }
@@ -401,7 +402,7 @@ static int wm_macro_modal(bContext *C, wmOperator *op, const wmEvent *event)
     retval = opm->type->modal(C, opm, event);
     OPERATOR_RETVAL_CHECK(retval);
 
-    /* if we're halfway through using a tool and cancel it, clear the options [#37149] */
+    /* if we're halfway through using a tool and cancel it, clear the options T37149. */
     if (retval & OPERATOR_CANCELLED) {
       WM_operator_properties_clear(opm->ptr);
     }
@@ -444,12 +445,12 @@ static int wm_macro_modal(bContext *C, wmOperator *op, const wmEvent *event)
           }
 
           if (wrap) {
-            ARegion *ar = CTX_wm_region(C);
-            if (ar) {
-              bounds[0] = ar->winrct.xmin;
-              bounds[1] = ar->winrct.ymax;
-              bounds[2] = ar->winrct.xmax;
-              bounds[3] = ar->winrct.ymin;
+            ARegion *region = CTX_wm_region(C);
+            if (region) {
+              bounds[0] = region->winrct.xmin;
+              bounds[1] = region->winrct.ymax;
+              bounds[2] = region->winrct.xmax;
+              bounds[3] = region->winrct.ymin;
             }
           }
 
@@ -507,9 +508,9 @@ wmOperatorType *WM_operatortype_append_macro(const char *idname,
 
   RNA_def_struct_ui_text(ot->srna, ot->name, ot->description);
   RNA_def_struct_identifier(&BLENDER_RNA, ot->srna, ot->idname);
-  /* Use i18n context from ext.srna if possible (py operators). */
-  i18n_context = ot->ext.srna ? RNA_struct_translation_context(ot->ext.srna) :
-                                BLT_I18NCONTEXT_OPERATOR_DEFAULT;
+  /* Use i18n context from rna_ext.srna if possible (py operators). */
+  i18n_context = ot->rna_ext.srna ? RNA_struct_translation_context(ot->rna_ext.srna) :
+                                    BLT_I18NCONTEXT_OPERATOR_DEFAULT;
   RNA_def_struct_translation_context(ot->srna, i18n_context);
   ot->translation_context = i18n_context;
 
@@ -606,24 +607,32 @@ char *WM_operatortype_description(struct bContext *C,
       if (description[0]) {
         return description;
       }
-      else {
-        MEM_freeN(description);
-      }
+      MEM_freeN(description);
     }
   }
 
   const char *info = RNA_struct_ui_description(ot->srna);
-
-  if (!(info && info[0])) {
-    info = RNA_struct_ui_name(ot->srna);
-  }
-
   if (info && info[0]) {
     return BLI_strdup(info);
   }
-  else {
-    return NULL;
+  return NULL;
+}
+
+/**
+ * Use when we want a label, preferring the description.
+ */
+char *WM_operatortype_description_or_name(struct bContext *C,
+                                          struct wmOperatorType *ot,
+                                          struct PointerRNA *properties)
+{
+  char *text = WM_operatortype_description(C, ot, properties);
+  if (text == NULL) {
+    const char *text_orig = WM_operatortype_name(ot, properties);
+    if (text_orig != NULL) {
+      text = BLI_strdup(text_orig);
+    }
   }
+  return text;
 }
 
 /** \} */

@@ -43,13 +43,11 @@
 #include "BLT_translation.h"
 
 #include "transform.h"
-#include "transform_snap.h"
 #include "transform_mode.h"
+#include "transform_snap.h"
 
 /* -------------------------------------------------------------------- */
-/* Transform (Bend) */
-
-/** \name Transform Bend
+/** \name Transform (Bend)
  * \{ */
 
 struct BendCustomData {
@@ -102,9 +100,9 @@ static void Bend(TransInfo *t, const int UNUSED(mval[2]))
    * this isnt essential but nicer to give reasonable snapping values for radius */
   if (t->tsnap.mode & SCE_SNAP_MODE_INCREMENT) {
     const float radius_snap = 0.1f;
-    const float snap_hack = (t->snap[1] * data->warp_init_dist) / radius_snap;
+    const float snap_hack = (t->snap[0] * data->warp_init_dist) / radius_snap;
     values.scale *= snap_hack;
-    snapGridIncrement(t, values.vector);
+    transform_snap_increment(t, values.vector);
     values.scale /= snap_hack;
   }
 #endif
@@ -186,10 +184,6 @@ static void Bend(TransInfo *t, const int UNUSED(mval[2]))
       float delta[3];
       float fac, fac_scaled;
 
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -246,7 +240,7 @@ static void Bend(TransInfo *t, const int UNUSED(mval[2]))
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initBend(TransInfo *t)
@@ -265,11 +259,10 @@ void initBend(TransInfo *t)
 
   t->idx_max = 1;
   t->num.idx_max = 1;
-  t->snap[0] = 0.0f;
-  t->snap[1] = SNAP_INCREMENTAL_ANGLE;
-  t->snap[2] = t->snap[1] * 0.2;
+  t->snap[0] = SNAP_INCREMENTAL_ANGLE;
+  t->snap[1] = t->snap[0] * 0.2;
 
-  copy_v3_fl(t->num.val_inc, t->snap[1]);
+  copy_v3_fl(t->num.val_inc, t->snap[0]);
   t->num.unit_sys = t->scene->unit.system;
   t->num.unit_use_radians = (t->scene->unit.system_rotation == USER_UNIT_ROT_RADIANS);
   t->num.unit_type[0] = B_UNIT_ROTATION;
@@ -289,7 +282,8 @@ void initBend(TransInfo *t)
 
   curs = t->scene->cursor.location;
   copy_v3_v3(data->warp_sta, curs);
-  ED_view3d_win_to_3d((View3D *)t->sa->spacedata.first, t->ar, curs, mval_fl, data->warp_end);
+  ED_view3d_win_to_3d(
+      (View3D *)t->area->spacedata.first, t->region, curs, mval_fl, data->warp_end);
 
   copy_v3_v3(data->warp_nor, t->viewinv[2]);
   normalize_v3(data->warp_nor);

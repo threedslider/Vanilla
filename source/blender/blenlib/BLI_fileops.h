@@ -22,16 +22,11 @@
  * \brief File and directory operations.
  * */
 
-#ifndef __BLI_FILEOPS_H__
-#define __BLI_FILEOPS_H__
+#pragma once
 
+#include <stdint.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#include <stdint.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /* for size_t (needed on windows) */
 #include <stddef.h>
@@ -39,6 +34,11 @@ extern "C" {
 #include <limits.h> /* for PATH_MAX */
 
 #include "BLI_compiler_attrs.h"
+#include "BLI_utildefines.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifndef PATH_MAX
 #  define PATH_MAX 4096
@@ -47,10 +47,10 @@ extern "C" {
 /* Common */
 
 int BLI_exists(const char *path) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
-int BLI_copy(const char *path, const char *to) ATTR_NONNULL();
+int BLI_copy(const char *file, const char *to) ATTR_NONNULL();
 int BLI_rename(const char *from, const char *to) ATTR_NONNULL();
-int BLI_delete(const char *path, bool dir, bool recursive) ATTR_NONNULL();
-int BLI_delete_soft(const char *path, const char **error_message) ATTR_NONNULL();
+int BLI_delete(const char *file, bool dir, bool recursive) ATTR_NONNULL();
+int BLI_delete_soft(const char *file, const char **error_message) ATTR_NONNULL();
 #if 0 /* Unused */
 int BLI_move(const char *path, const char *to) ATTR_NONNULL();
 int BLI_create_symlink(const char *path, const char *to) ATTR_NONNULL();
@@ -69,6 +69,10 @@ typedef struct stat BLI_stat_t;
 
 int BLI_fstat(int fd, BLI_stat_t *buffer) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 int BLI_stat(const char *path, BLI_stat_t *buffer) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
+int64_t BLI_ftell(FILE *stream) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
+int BLI_fseek(FILE *stream, int64_t offset, int whence);
+int64_t BLI_lseek(int fd, int64_t offset, int whence);
+
 #ifdef WIN32
 int BLI_wstat(const wchar_t *path, BLI_stat_t *buffer);
 #endif
@@ -104,7 +108,7 @@ bool BLI_is_dir(const char *path) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 bool BLI_is_file(const char *path) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 bool BLI_dir_create_recursive(const char *dir) ATTR_NONNULL();
 double BLI_dir_free_space(const char *dir) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
-char *BLI_current_working_dir(char *dir, const size_t maxlen) ATTR_WARN_UNUSED_RESULT
+char *BLI_current_working_dir(char *dir, const size_t maxncpy) ATTR_WARN_UNUSED_RESULT
     ATTR_NONNULL();
 eFileAttributes BLI_file_attributes(const char *path);
 
@@ -142,15 +146,22 @@ int BLI_access(const char *filename, int mode) ATTR_WARN_UNUSED_RESULT ATTR_NONN
 
 bool BLI_file_is_writable(const char *file) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 bool BLI_file_touch(const char *file) ATTR_NONNULL();
+bool BLI_file_alias_target(const char *filepath, char *r_targetpath) ATTR_WARN_UNUSED_RESULT;
 
 #if 0 /* UNUSED */
 int BLI_file_gzip(const char *from, const char *to) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 #endif
 char *BLI_file_ungzip_to_mem(const char *from_file, int *r_size) ATTR_WARN_UNUSED_RESULT
     ATTR_NONNULL();
-
+size_t BLI_gzip_mem_to_file_at_pos(void *buf,
+                                   size_t len,
+                                   FILE *file,
+                                   size_t gz_stream_offset,
+                                   int compression_level) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
+size_t BLI_ungzip_file_to_mem_at_pos(void *buf, size_t len, FILE *file, size_t gz_stream_offset)
+    ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 size_t BLI_file_descriptor_size(int file) ATTR_WARN_UNUSED_RESULT;
-size_t BLI_file_size(const char *file) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
+size_t BLI_file_size(const char *path) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 
 /* compare if one was last modified before the other */
 bool BLI_file_older(const char *file1, const char *file2) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
@@ -177,5 +188,3 @@ void BLI_get_short_name(char short_name[256], const char *filename);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BLI_FILEOPS_H__ */

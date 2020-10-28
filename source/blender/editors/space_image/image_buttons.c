@@ -21,8 +21,8 @@
  * \ingroup spimage
  */
 
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "DNA_node_types.h"
 #include "DNA_scene_types.h"
@@ -37,8 +37,8 @@
 #include "BKE_context.h"
 #include "BKE_image.h"
 #include "BKE_node.h"
-#include "BKE_screen.h"
 #include "BKE_scene.h"
+#include "BKE_screen.h"
 
 #include "RE_pipeline.h"
 
@@ -47,8 +47,8 @@
 #include "IMB_imbuf_types.h"
 
 #include "ED_gpencil.h"
-#include "ED_screen.h"
 #include "ED_image.h"
+#include "ED_screen.h"
 
 #include "RNA_access.h"
 
@@ -139,9 +139,7 @@ static bool ui_imageuser_slot_menu_step(bContext *C, int direction, void *image_
     WM_event_add_notifier(C, NC_IMAGE | ND_DRAW, NULL);
     return true;
   }
-  else {
-    return true;
-  }
+  return true;
 }
 
 static const char *ui_imageuser_layer_fake_name(RenderResult *rr)
@@ -150,12 +148,10 @@ static const char *ui_imageuser_layer_fake_name(RenderResult *rr)
   if (rv->rectf) {
     return IFACE_("Composite");
   }
-  else if (rv->rect32) {
+  if (rv->rect32) {
     return IFACE_("Sequence");
   }
-  else {
-    return NULL;
-  }
+  return NULL;
 }
 
 /* workaround for passing many args */
@@ -576,8 +572,12 @@ static void image_multiview_cb(bContext *C, void *rnd_pt, void *UNUSED(arg_v))
   WM_event_add_notifier(C, NC_IMAGE | ND_DRAW, NULL);
 }
 
-static void uiblock_layer_pass_buttons(
-    uiLayout *layout, Image *image, RenderResult *rr, ImageUser *iuser, int w, short *render_slot)
+static void uiblock_layer_pass_buttons(uiLayout *layout,
+                                       Image *image,
+                                       RenderResult *rr,
+                                       ImageUser *iuser,
+                                       int w,
+                                       const short *render_slot)
 {
   struct ImageUI_Data rnd_pt_local, *rnd_pt = NULL;
   uiBlock *block = uiLayoutGetBlock(layout);
@@ -656,8 +656,8 @@ static void uiblock_layer_pass_buttons(
     /* pass */
     rpass = (rl ? BLI_findlink(&rl->passes, iuser->pass) : NULL);
 
-    if (rpass && RE_passes_have_name(rl)) {
-      display_name = rpass->name;
+    if (rl && RE_passes_have_name(rl)) {
+      display_name = rpass ? rpass->name : "";
       rnd_pt = ui_imageuser_data_copy(&rnd_pt_local);
       but = uiDefMenuBut(block,
                          ui_imageuser_pass_menu,
@@ -725,9 +725,6 @@ static void uiblock_layer_pass_buttons(
   }
 }
 
-// XXX HACK!
-// static int packdummy=0;
-
 typedef struct RNAUpdateCb {
   PointerRNA ptr;
   PropertyRNA *prop;
@@ -743,7 +740,7 @@ static void rna_update_cb(bContext *C, void *arg_cb, void *UNUSED(arg))
   cb->iuser->ok = 1;
 
   /* we call update here on the pointer property, this way the
-   * owner of the image pointer can still define it's own update
+   * owner of the image pointer can still define its own update
    * and notifier */
   RNA_property_update(C, &cb->ptr, cb->prop);
 }
@@ -1276,7 +1273,7 @@ void uiTemplateImageInfo(uiLayout *layout, bContext *C, Image *ima, ImageUser *i
     }
     else if (ima->source == IMA_SRC_SEQUENCE && ibuf) {
       /* Image sequence frame number + filename */
-      const char *filename = BLI_last_slash(ibuf->name);
+      const char *filename = BLI_path_slash_rfind(ibuf->name);
       filename = (filename == NULL) ? ibuf->name : filename + 1;
       BLI_snprintf(str, MAX_IMAGE_INFO_LEN, TIP_("Frame %d: %s"), framenr, filename);
     }

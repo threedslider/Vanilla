@@ -24,8 +24,8 @@
 #include "render/attribute.h"
 
 #include "util/util_boundbox.h"
-#include "util/util_transform.h"
 #include "util/util_set.h"
+#include "util/util_transform.h"
 #include "util/util_types.h"
 #include "util/util_vector.h"
 
@@ -40,6 +40,7 @@ class RenderStats;
 class Scene;
 class SceneParams;
 class Shader;
+class Volume;
 
 /* Geometry
  *
@@ -52,6 +53,7 @@ class Geometry : public Node {
   enum Type {
     MESH,
     HAIR,
+    VOLUME,
   };
 
   Type type;
@@ -89,6 +91,9 @@ class Geometry : public Node {
   bool need_update;
   bool need_update_rebuild;
 
+  /* Index into scene->geometry (only valid during update) */
+  size_t index;
+
   /* Constructor/Destructor */
   explicit Geometry(const NodeType *node_type, const Type type);
   virtual ~Geometry();
@@ -101,6 +106,8 @@ class Geometry : public Node {
   /* Attribute Requests */
   bool need_attribute(Scene *scene, AttributeStandard std);
   bool need_attribute(Scene *scene, ustring name);
+
+  AttributeRequestSet needed_attributes();
 
   /* UDIM */
   virtual void get_uv_tiles(ustring map, unordered_set<int> &tiles) = 0;
@@ -166,7 +173,7 @@ class GeometryManager {
  protected:
   bool displace(Device *device, DeviceScene *dscene, Scene *scene, Mesh *mesh, Progress &progress);
 
-  void create_volume_mesh(Scene *scene, Mesh *mesh, Progress &progress);
+  void create_volume_mesh(Volume *volume, Progress &progress);
 
   /* Attributes */
   void update_osl_attributes(Device *device,
@@ -175,7 +182,8 @@ class GeometryManager {
   void update_svm_attributes(Device *device,
                              DeviceScene *dscene,
                              Scene *scene,
-                             vector<AttributeRequestSet> &geom_attributes);
+                             vector<AttributeRequestSet> &geom_attributes,
+                             vector<AttributeRequestSet> &object_attributes);
 
   /* Compute verts/triangles/curves offsets in global arrays. */
   void mesh_calc_offset(Scene *scene);

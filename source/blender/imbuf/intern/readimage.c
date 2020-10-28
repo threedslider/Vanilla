@@ -23,23 +23,23 @@
  */
 
 #ifdef _WIN32
+#  include "mmap_win.h"
 #  include <io.h>
 #  include <stddef.h>
 #  include <sys/types.h>
-#  include "mmap_win.h"
 #endif
 
-#include <stdlib.h>
-#include "BLI_utildefines.h"
-#include "BLI_string.h"
-#include "BLI_path_util.h"
 #include "BLI_fileops.h"
+#include "BLI_path_util.h"
+#include "BLI_string.h"
+#include "BLI_utildefines.h"
+#include <stdlib.h>
 
-#include "imbuf.h"
 #include "IMB_allocimbuf.h"
-#include "IMB_imbuf_types.h"
-#include "IMB_imbuf.h"
 #include "IMB_filetype.h"
+#include "IMB_imbuf.h"
+#include "IMB_imbuf_types.h"
+#include "imbuf.h"
 
 #include "IMB_colormanagement.h"
 #include "IMB_colormanagement_intern.h"
@@ -52,7 +52,7 @@ static void imb_handle_alpha(ImBuf *ibuf,
   if (colorspace) {
     if (ibuf->rect != NULL && ibuf->rect_float == NULL) {
       /* byte buffer is never internally converted to some standard space,
-       * store pointer to it's color space descriptor instead
+       * store pointer to its color space descriptor instead
        */
       ibuf->rect_colorspace = colormanage_colorspace_get_named(effective_colorspace);
     }

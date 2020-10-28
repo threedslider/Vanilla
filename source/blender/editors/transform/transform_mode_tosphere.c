@@ -36,13 +36,11 @@
 #include "BLT_translation.h"
 
 #include "transform.h"
-#include "transform_snap.h"
 #include "transform_mode.h"
+#include "transform_snap.h"
 
 /* -------------------------------------------------------------------- */
-/* Transform (ToSphere) */
-
-/** \name Transform ToSphere
+/** \name Transform (ToSphere)
  * \{ */
 
 static void applyToSphere(TransInfo *t, const int UNUSED(mval[2]))
@@ -54,7 +52,7 @@ static void applyToSphere(TransInfo *t, const int UNUSED(mval[2]))
 
   ratio = t->values[0];
 
-  snapGridIncrement(t, &ratio);
+  transform_snap_increment(t, &ratio);
 
   applyNumInput(&t->num, &ratio);
 
@@ -79,10 +77,6 @@ static void applyToSphere(TransInfo *t, const int UNUSED(mval[2]))
     TransData *td = tc->data;
     for (i = 0; i < tc->data_len; i++, td++) {
       float tratio;
-      if (td->flag & TD_NOACTION) {
-        break;
-      }
-
       if (td->flag & TD_SKIP) {
         continue;
       }
@@ -101,7 +95,7 @@ static void applyToSphere(TransInfo *t, const int UNUSED(mval[2]))
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initToSphere(TransInfo *t)
@@ -115,18 +109,17 @@ void initToSphere(TransInfo *t)
 
   t->idx_max = 0;
   t->num.idx_max = 0;
-  t->snap[0] = 0.0f;
-  t->snap[1] = 0.1f;
-  t->snap[2] = t->snap[1] * 0.1f;
+  t->snap[0] = 0.1f;
+  t->snap[1] = t->snap[0] * 0.1f;
 
-  copy_v3_fl(t->num.val_inc, t->snap[1]);
+  copy_v3_fl(t->num.val_inc, t->snap[0]);
   t->num.unit_sys = t->scene->unit.system;
   t->num.unit_type[0] = B_UNIT_NONE;
 
   t->num.val_flag[0] |= NUM_NULL_ONE | NUM_NO_NEGATIVE;
   t->flag |= T_NO_CONSTRAINT;
 
-  // Calculate average radius
+  /* Calculate average radius */
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransData *td = tc->data;
     for (i = 0; i < tc->data_len; i++, td++) {

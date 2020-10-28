@@ -18,6 +18,7 @@
 #define __TABLES_H__
 
 #include "util/util_list.h"
+#include "util/util_vector.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -41,7 +42,7 @@ class LookupTables {
   LookupTables();
   ~LookupTables();
 
-  void device_update(Device *device, DeviceScene *dscene);
+  void device_update(Device *device, DeviceScene *dscene, Scene *scene);
   void device_free(Device *device, DeviceScene *dscene);
 
   size_t add_table(DeviceScene *dscene, vector<float> &data);

@@ -20,8 +20,7 @@
  * \ingroup draw
  */
 
-#ifndef __DRW_ENGINE_TYPES_H__
-#define __DRW_ENGINE_TYPES_H__
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,11 +34,14 @@ typedef struct DefaultFramebufferList {
   struct GPUFrameBuffer *color_only_fb;
   struct GPUFrameBuffer *depth_only_fb;
   struct GPUFrameBuffer *overlay_only_fb;
+  struct GPUFrameBuffer *stereo_comp_fb;
 } DefaultFramebufferList;
 
 typedef struct DefaultTextureList {
   struct GPUTexture *color;
   struct GPUTexture *color_overlay;
+  struct GPUTexture *color_stereo;
+  struct GPUTexture *color_overlay_stereo;
   struct GPUTexture *depth;
   struct GPUTexture *depth_in_front;
 } DefaultTextureList;
@@ -47,5 +49,3 @@ typedef struct DefaultTextureList {
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __DRW_ENGINE_H__ */

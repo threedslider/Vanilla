@@ -20,14 +20,10 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_SOUND_TYPES_H__
-#define __DNA_SOUND_TYPES_H__
+#pragma once
 
-#include "DNA_defs.h"
 #include "DNA_ID.h"
-
-/* stupid... could easily be solved */
-#include "DNA_view2d_types.h"
+#include "DNA_defs.h"
 
 struct Ipo;
 struct PackedFile;
@@ -39,7 +35,7 @@ typedef struct bSound {
    * The path to the sound file.
    */
   /** 1024 = FILE_MAX. */
-  char name[1024];
+  char filepath[1024];
 
   /**
    * The packed file.
@@ -68,9 +64,9 @@ typedef struct bSound {
   short tags;
   char _pad[4];
 
-  /* unused currently
-  int type;
-  struct bSound *child_sound; */
+  /* Unused currently. */
+  // int type;
+  // struct bSound *child_sound;
 
   /**
    * The audaspace handle for cache.
@@ -84,7 +80,7 @@ typedef struct bSound {
 
   /**
    * The audaspace handle that should actually be played back.
-   * Should be cache if cache != NULL; otherwise it's handle
+   * Should be cache if cache != NULL; otherwise its handle
    */
   void *playback_handle;
 
@@ -104,7 +100,7 @@ typedef enum eSound_Type {
 } eSound_Type;
 #endif
 
-/* bSound->flags */
+/** #bSound.flags */
 enum {
 #ifdef DNA_DEPRECATED_ALLOW
   /* deprecated! used for sound actuator loading */
@@ -114,13 +110,9 @@ enum {
   SOUND_FLAGS_MONO = (1 << 5),
 };
 
-/* bSound->tags */
+/** #bSound.tags */
 enum {
   /* Do not free/reset waveform on sound load, only used by undo code. */
   SOUND_TAGS_WAVEFORM_NO_RELOAD = 1 << 0,
   SOUND_TAGS_WAVEFORM_LOADING = (1 << 6),
 };
-
-/* to DNA_sound_types.h*/
-
-#endif

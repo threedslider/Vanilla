@@ -28,11 +28,11 @@
 #include "WM_api.h"
 #include "WM_types.h"
 
-#include "ED_select_utils.h"
-#include "ED_physics.h"
 #include "ED_object.h"
+#include "ED_physics.h"
+#include "ED_select_utils.h"
 
-#include "physics_intern.h"  // own include
+#include "physics_intern.h" /* own include */
 
 /***************************** particles ***********************************/
 

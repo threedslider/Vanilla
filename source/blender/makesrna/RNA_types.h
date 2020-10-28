@@ -91,6 +91,7 @@ typedef enum PropertyUnit {
   PROP_UNIT_ACCELERATION = (8 << 16), /* m/(s^2) */
   PROP_UNIT_CAMERA = (9 << 16),       /* mm */
   PROP_UNIT_POWER = (10 << 16),       /* W */
+  PROP_UNIT_TEMPERATURE = (11 << 16), /* C */
 } PropertyUnit;
 
 #define RNA_SUBTYPE_UNIT(subtype) ((subtype)&0x00FF0000)
@@ -121,6 +122,8 @@ typedef enum PropertySubType {
   PROP_PASSWORD = 6,
 
   /* numbers */
+  /** A dimension in pixel units, possibly before DPI scaling (so value may not be the final pixel
+   * value but the one to apply DPI scale to). */
   PROP_PIXEL = 12,
   PROP_UNSIGNED = 13,
   PROP_PERCENTAGE = 14,
@@ -154,6 +157,9 @@ typedef enum PropertySubType {
 
   /** Light */
   PROP_POWER = 42 | PROP_UNIT_POWER,
+
+  /* temperature */
+  PROP_TEMPERATURE = 43 | PROP_UNIT_TEMPERATURE,
 } PropertySubType;
 
 /* Make sure enums are updated with these */
@@ -180,8 +186,8 @@ typedef enum PropertyFlag {
    */
   PROP_ANIMATABLE = (1 << 1),
   /**
-   * This flag means when the property's widget is in 'textedit' mode, it will be updated
-   * after every typed char, instead of waiting final validation. Used e.g. for text searchbox.
+   * This flag means when the property's widget is in 'text-edit' mode, it will be updated
+   * after every typed char, instead of waiting final validation. Used e.g. for text search-box.
    * It will also cause UI_BUT_VALUE_CLEAR to be set for text buttons. We could add an own flag
    * for search/filter properties, but this works just fine for now.
    */
@@ -297,6 +303,18 @@ typedef enum PropertyOverrideFlag {
    */
   PROPOVERRIDE_NO_COMPARISON = (1 << 1),
 
+  /**
+   * Means the property can be fully ignored by override process.
+   * Unlike NO_COMPARISON, it can still be used by diffing code, but no override operation will be
+   * created for it, and no attempt to restore the data from linked reference either.
+   *
+   * WARNING: This flag should be used with a lot of caution, as it completely by-passes override
+   * system. It is currently only used for ID's names, since we cannot prevent local override to
+   * get a different name from the linked reference, and ID names are 'rna name property' (i.e. are
+   * used in overrides of collections of IDs). See also `BKE_lib_override_library_update()` where
+   * we deal manually with the value of that property at DNA level. */
+  PROPOVERRIDE_IGNORE = (1 << 2),
+
   /*** Collections-related ***/
 
   /** The property supports insertion (collections only). */
@@ -360,6 +378,11 @@ typedef struct ArrayIterator {
   IteratorSkipFunc skip;
 } ArrayIterator;
 
+typedef struct CountIterator {
+  void *ptr;
+  int item;
+} CountIterator;
+
 typedef struct CollectionPropertyIterator {
   /* internal */
   PointerRNA parent;
@@ -368,6 +391,7 @@ typedef struct CollectionPropertyIterator {
   union {
     ArrayIterator array;
     ListBaseIterator listbase;
+    CountIterator count;
     void *custom;
   } internal;
   int idprop;
@@ -390,7 +414,7 @@ typedef struct CollectionListBase {
 
 typedef enum RawPropertyType {
   PROP_RAW_UNSET = -1,
-  PROP_RAW_INT,  // XXX - abused for types that are not set, eg. MFace.verts, needs fixing.
+  PROP_RAW_INT, /* XXX - abused for types that are not set, eg. MFace.verts, needs fixing. */
   PROP_RAW_SHORT,
   PROP_RAW_CHAR,
   PROP_RAW_BOOLEAN,
@@ -643,7 +667,7 @@ typedef struct BlenderRNA BlenderRNA;
  * Extending
  *
  * This struct must be embedded in *Type structs in
- * order to make then definable through RNA.
+ * order to make them definable through RNA.
  */
 typedef struct ExtensionRNA {
   void *data;

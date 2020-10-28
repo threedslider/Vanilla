@@ -84,9 +84,7 @@ CCL_NAMESPACE_BEGIN
 
 /* Kernel features */
 #define __SOBOL__
-#define __INSTANCING__
 #define __DPDU__
-#define __UV__
 #define __BACKGROUND__
 #define __CAUSTICS_TRICKS__
 #define __VISIBILITY_FLAG__
@@ -106,8 +104,6 @@ CCL_NAMESPACE_BEGIN
 #ifndef __KERNEL_AO_PREVIEW__
 #  define __SVM__
 #  define __EMISSION__
-#  define __TEXTURES__
-#  define __EXTRA_NODES__
 #  define __HOLDOUT__
 #  define __MULTI_CLOSURE__
 #  define __TRANSPARENT_SHADOWS__
@@ -127,9 +123,6 @@ CCL_NAMESPACE_BEGIN
 
 /* Device specific features */
 #ifdef __KERNEL_CPU__
-#  ifdef __KERNEL_SSE2__
-#    define __QBVH__
-#  endif
 #  ifdef WITH_OSL
 #    define __OSL__
 #  endif
@@ -267,6 +260,7 @@ enum PathTraceDimension {
 enum SamplingPattern {
   SAMPLING_PATTERN_SOBOL = 0,
   SAMPLING_PATTERN_CMJ = 1,
+  SAMPLING_PATTERN_PMJ = 2,
 
   SAMPLING_NUM_PATTERNS,
 };
@@ -274,6 +268,7 @@ enum SamplingPattern {
 /* these flags values correspond to raytypes in osl.cpp, so keep them in sync! */
 
 enum PathRayFlag {
+  /* Ray visibility. */
   PATH_RAY_CAMERA = (1 << 0),
   PATH_RAY_REFLECT = (1 << 1),
   PATH_RAY_TRANSMIT = (1 << 2),
@@ -282,6 +277,7 @@ enum PathRayFlag {
   PATH_RAY_SINGULAR = (1 << 5),
   PATH_RAY_TRANSPARENT = (1 << 6),
 
+  /* Shadow ray visibility. */
   PATH_RAY_SHADOW_OPAQUE_NON_CATCHER = (1 << 7),
   PATH_RAY_SHADOW_OPAQUE_CATCHER = (1 << 8),
   PATH_RAY_SHADOW_OPAQUE = (PATH_RAY_SHADOW_OPAQUE_NON_CATCHER | PATH_RAY_SHADOW_OPAQUE_CATCHER),
@@ -293,8 +289,11 @@ enum PathRayFlag {
                                  PATH_RAY_SHADOW_TRANSPARENT_NON_CATCHER),
   PATH_RAY_SHADOW = (PATH_RAY_SHADOW_OPAQUE | PATH_RAY_SHADOW_TRANSPARENT),
 
-  PATH_RAY_CURVE = (1 << 11),          /* visibility flag to define curve segments */
-  PATH_RAY_VOLUME_SCATTER = (1 << 12), /* volume scattering */
+  /* Unused, free to reuse. */
+  PATH_RAY_UNUSED = (1 << 11),
+
+  /* Ray visibility for volume scattering. */
+  PATH_RAY_VOLUME_SCATTER = (1 << 12),
 
   /* Special flag to tag unaligned BVH nodes. */
   PATH_RAY_NODE_UNALIGNED = (1 << 13),
@@ -373,6 +372,8 @@ typedef enum PassType {
   PASS_CRYPTOMATTE,
   PASS_AOV_COLOR,
   PASS_AOV_VALUE,
+  PASS_ADAPTIVE_AUX_BUFFER,
+  PASS_SAMPLE_COUNT,
   PASS_CATEGORY_MAIN_END = 31,
 
   PASS_MIST = 32,
@@ -394,6 +395,10 @@ typedef enum PassType {
   PASS_VOLUME_INDIRECT,
   /* No Scatter color since it's tricky to define what it would even mean. */
   PASS_CATEGORY_LIGHT_END = 63,
+
+  PASS_BAKE_PRIMITIVE,
+  PASS_BAKE_DIFFERENTIAL,
+  PASS_CATEGORY_BAKE_END = 95
 } PassType;
 
 #define PASS_ANY (~0)
@@ -517,7 +522,7 @@ typedef ccl_addr_space struct PathRadiance {
   float3 indirect_transmission;
   float3 indirect_volume;
 
-  float4 shadow;
+  float3 shadow;
   float mist;
 #endif
 
@@ -686,26 +691,37 @@ typedef enum PrimitiveType {
   PRIMITIVE_NONE = 0,
   PRIMITIVE_TRIANGLE = (1 << 0),
   PRIMITIVE_MOTION_TRIANGLE = (1 << 1),
-  PRIMITIVE_CURVE = (1 << 2),
-  PRIMITIVE_MOTION_CURVE = (1 << 3),
+  PRIMITIVE_CURVE_THICK = (1 << 2),
+  PRIMITIVE_MOTION_CURVE_THICK = (1 << 3),
+  PRIMITIVE_CURVE_RIBBON = (1 << 4),
+  PRIMITIVE_MOTION_CURVE_RIBBON = (1 << 5),
   /* Lamp primitive is not included below on purpose,
    * since it is no real traceable primitive.
    */
-  PRIMITIVE_LAMP = (1 << 4),
+  PRIMITIVE_LAMP = (1 << 6),
 
   PRIMITIVE_ALL_TRIANGLE = (PRIMITIVE_TRIANGLE | PRIMITIVE_MOTION_TRIANGLE),
-  PRIMITIVE_ALL_CURVE = (PRIMITIVE_CURVE | PRIMITIVE_MOTION_CURVE),
-  PRIMITIVE_ALL_MOTION = (PRIMITIVE_MOTION_TRIANGLE | PRIMITIVE_MOTION_CURVE),
+  PRIMITIVE_ALL_CURVE = (PRIMITIVE_CURVE_THICK | PRIMITIVE_MOTION_CURVE_THICK |
+                         PRIMITIVE_CURVE_RIBBON | PRIMITIVE_MOTION_CURVE_RIBBON),
+  PRIMITIVE_ALL_MOTION = (PRIMITIVE_MOTION_TRIANGLE | PRIMITIVE_MOTION_CURVE_THICK |
+                          PRIMITIVE_MOTION_CURVE_RIBBON),
   PRIMITIVE_ALL = (PRIMITIVE_ALL_TRIANGLE | PRIMITIVE_ALL_CURVE),
 
   /* Total number of different traceable primitives.
    * NOTE: This is an actual value, not a bitflag.
    */
-  PRIMITIVE_NUM_TOTAL = 4,
+  PRIMITIVE_NUM_TOTAL = 6,
 } PrimitiveType;
 
 #define PRIMITIVE_PACK_SEGMENT(type, segment) ((segment << PRIMITIVE_NUM_TOTAL) | (type))
 #define PRIMITIVE_UNPACK_SEGMENT(type) (type >> PRIMITIVE_NUM_TOTAL)
+
+typedef enum CurveShapeType {
+  CURVE_RIBBON = 0,
+  CURVE_THICK = 1,
+
+  CURVE_NUM_SHAPE_TYPES,
+} CurveShapeType;
 
 /* Attributes */
 
@@ -717,18 +733,18 @@ typedef enum AttributePrimitive {
 } AttributePrimitive;
 
 typedef enum AttributeElement {
-  ATTR_ELEMENT_NONE,
-  ATTR_ELEMENT_OBJECT,
-  ATTR_ELEMENT_MESH,
-  ATTR_ELEMENT_FACE,
-  ATTR_ELEMENT_VERTEX,
-  ATTR_ELEMENT_VERTEX_MOTION,
-  ATTR_ELEMENT_CORNER,
-  ATTR_ELEMENT_CORNER_BYTE,
-  ATTR_ELEMENT_CURVE,
-  ATTR_ELEMENT_CURVE_KEY,
-  ATTR_ELEMENT_CURVE_KEY_MOTION,
-  ATTR_ELEMENT_VOXEL
+  ATTR_ELEMENT_NONE = 0,
+  ATTR_ELEMENT_OBJECT = (1 << 0),
+  ATTR_ELEMENT_MESH = (1 << 1),
+  ATTR_ELEMENT_FACE = (1 << 2),
+  ATTR_ELEMENT_VERTEX = (1 << 3),
+  ATTR_ELEMENT_VERTEX_MOTION = (1 << 4),
+  ATTR_ELEMENT_CORNER = (1 << 5),
+  ATTR_ELEMENT_CORNER_BYTE = (1 << 6),
+  ATTR_ELEMENT_CURVE = (1 << 7),
+  ATTR_ELEMENT_CURVE_KEY = (1 << 8),
+  ATTR_ELEMENT_CURVE_KEY_MOTION = (1 << 9),
+  ATTR_ELEMENT_VOXEL = (1 << 10)
 } AttributeElement;
 
 typedef enum AttributeStandard {
@@ -879,13 +895,13 @@ enum ShaderDataFlag {
   SD_HAS_DISPLACEMENT = (1 << 26),
   /* Has constant emission (value stored in __shaders) */
   SD_HAS_CONSTANT_EMISSION = (1 << 27),
-  /* Needs to access attributes */
-  SD_NEED_ATTRIBUTES = (1 << 28),
+  /* Needs to access attributes for volume rendering */
+  SD_NEED_VOLUME_ATTRIBUTES = (1 << 28),
 
   SD_SHADER_FLAGS = (SD_USE_MIS | SD_HAS_TRANSPARENT_SHADOW | SD_HAS_VOLUME | SD_HAS_ONLY_VOLUME |
                      SD_HETEROGENEOUS_VOLUME | SD_HAS_BSSRDF_BUMP | SD_VOLUME_EQUIANGULAR |
                      SD_VOLUME_MIS | SD_VOLUME_CUBIC | SD_HAS_BUMP | SD_HAS_DISPLACEMENT |
-                     SD_HAS_CONSTANT_EMISSION | SD_NEED_ATTRIBUTES)
+                     SD_HAS_CONSTANT_EMISSION | SD_NEED_VOLUME_ATTRIBUTES)
 };
 
 /* Object flags. */
@@ -1222,6 +1238,9 @@ typedef struct KernelFilm {
   int cryptomatte_depth;
   int pass_cryptomatte;
 
+  int pass_adaptive_aux_buffer;
+  int pass_sample_count;
+
   int pass_mist;
   float mist_start;
   float mist_inv_depth;
@@ -1233,7 +1252,9 @@ typedef struct KernelFilm {
 
   int pass_aov_color;
   int pass_aov_value;
-  int pad1;
+  int pass_aov_color_num;
+  int pass_aov_value_num;
+  int pad1, pad2, pad3;
 
   /* XYZ to rendering color space transform. float4 instead of float3 to
    * ensure consistent padding/alignment across devices. */
@@ -1241,6 +1262,10 @@ typedef struct KernelFilm {
   float4 xyz_to_g;
   float4 xyz_to_b;
   float4 rgb_to_y;
+
+  int pass_bake_primitive;
+  int pass_bake_differential;
+  int pad;
 
 #ifdef __KERNEL_DEBUG__
   int pass_bvh_traversed_nodes;
@@ -1255,6 +1280,8 @@ typedef struct KernelFilm {
   int display_divide_pass_stride;
   int use_display_exposure;
   int use_display_pass_alpha;
+
+  int pad4, pad5, pad6;
 } KernelFilm;
 static_assert_align(KernelFilm, 16);
 
@@ -1262,6 +1289,7 @@ typedef struct KernelBackground {
   /* only shader index */
   int surface_shader;
   int volume_shader;
+  float volume_step_size;
   int transparent;
   float transparent_roughness_squared_threshold;
 
@@ -1269,7 +1297,24 @@ typedef struct KernelBackground {
   float ao_factor;
   float ao_distance;
   float ao_bounces_factor;
-  float ao_pad;
+
+  /* portal sampling */
+  float portal_weight;
+  int num_portals;
+  int portal_offset;
+
+  /* sun sampling */
+  float sun_weight;
+  /* xyz store direction, w the angle. float4 instead of float3 is used
+   * to ensure consistent padding/alignment across devices. */
+  float4 sun;
+
+  /* map sampling */
+  float map_weight;
+  int map_res_x;
+  int map_res_y;
+
+  int use_mis;
 } KernelBackground;
 static_assert_align(KernelBackground, 16);
 
@@ -1281,14 +1326,7 @@ typedef struct KernelIntegrator {
   int num_all_lights;
   float pdf_triangles;
   float pdf_lights;
-  int pdf_background_res_x;
-  int pdf_background_res_y;
   float light_inv_rr_threshold;
-
-  /* light portals */
-  float portal_pdf;
-  int num_portals;
-  int portal_offset;
 
   /* bounces */
   int min_bounce;
@@ -1336,18 +1374,22 @@ typedef struct KernelIntegrator {
   /* sampler */
   int sampling_pattern;
   int aa_samples;
+  int adaptive_min_samples;
+  int adaptive_step;
+  int adaptive_stop_per_sample;
+  float adaptive_threshold;
 
   /* volume render */
   int use_volumes;
   int volume_max_steps;
-  float volume_step_size;
+  float volume_step_rate;
   int volume_samples;
 
   int start_sample;
 
   int max_closures;
 
-  int pad1;
+  int pad1, pad2;
 } KernelIntegrator;
 static_assert_align(KernelIntegrator, 16);
 
@@ -1355,13 +1397,11 @@ typedef enum KernelBVHLayout {
   BVH_LAYOUT_NONE = 0,
 
   BVH_LAYOUT_BVH2 = (1 << 0),
-  BVH_LAYOUT_BVH4 = (1 << 1),
-  BVH_LAYOUT_BVH8 = (1 << 2),
+  BVH_LAYOUT_EMBREE = (1 << 1),
+  BVH_LAYOUT_OPTIX = (1 << 2),
 
-  BVH_LAYOUT_EMBREE = (1 << 3),
-  BVH_LAYOUT_OPTIX = (1 << 4),
-
-  BVH_LAYOUT_DEFAULT = BVH_LAYOUT_BVH8,
+  /* Default BVH layout to use for CPU. */
+  BVH_LAYOUT_AUTO = BVH_LAYOUT_EMBREE,
   BVH_LAYOUT_ALL = (unsigned int)(~0u),
 } KernelBVHLayout;
 
@@ -1370,9 +1410,9 @@ typedef struct KernelBVH {
   int root;
   int have_motion;
   int have_curves;
-  int have_instancing;
   int bvh_layout;
   int use_bvh_steps;
+  int curve_subdivisions;
 
   /* Custom BVH */
 #ifdef __KERNEL_OPTIX__
@@ -1390,30 +1430,19 @@ typedef struct KernelBVH {
 } KernelBVH;
 static_assert_align(KernelBVH, 16);
 
-typedef enum CurveFlag {
-  /* runtime flags */
-  CURVE_KN_BACKFACING = 1,           /* backside of cylinder? */
-  CURVE_KN_ENCLOSEFILTER = 2,        /* don't consider strands surrounding start point? */
-  CURVE_KN_INTERPOLATE = 4,          /* render as a curve? */
-  CURVE_KN_ACCURATE = 8,             /* use accurate intersections test? */
-  CURVE_KN_INTERSECTCORRECTION = 16, /* correct for width after determing closest midpoint? */
-  CURVE_KN_TRUETANGENTGNORMAL = 32,  /* use tangent normal for geometry? */
-  CURVE_KN_RIBBONS = 64,             /* use flat curve ribbons */
-} CurveFlag;
-
-typedef struct KernelCurves {
-  int curveflags;
-  int subdivisions;
-
-  int pad1, pad2;
-} KernelCurves;
-static_assert_align(KernelCurves, 16);
-
 typedef struct KernelTables {
   int beckmann_offset;
   int pad1, pad2, pad3;
 } KernelTables;
 static_assert_align(KernelTables, 16);
+
+typedef struct KernelBake {
+  int object_index;
+  int tri_offset;
+  int type;
+  int pass_filter;
+} KernelBake;
+static_assert_align(KernelBake, 16);
 
 typedef struct KernelData {
   KernelCamera cam;
@@ -1421,8 +1450,8 @@ typedef struct KernelData {
   KernelBackground background;
   KernelIntegrator integrator;
   KernelBVH bvh;
-  KernelCurves curve;
   KernelTables tables;
+  KernelBake bake;
 } KernelData;
 static_assert_align(KernelData, 16);
 
@@ -1451,6 +1480,9 @@ typedef struct KernelObject {
 
   float cryptomatte_object;
   float cryptomatte_asset;
+
+  float shadow_terminator_offset;
+  float pad1, pad2, pad3;
 } KernelObject;
 static_assert_align(KernelObject, 16);
 
@@ -1661,11 +1693,15 @@ typedef struct WorkTile {
   uint start_sample;
   uint num_samples;
 
-  uint offset;
+  int offset;
   uint stride;
 
   ccl_global float *buffer;
 } WorkTile;
+
+/* Precoumputed sample table sizes for PMJ02 sampler. */
+#define NUM_PMJ_SAMPLES 64 * 64
+#define NUM_PMJ_PATTERNS 48
 
 CCL_NAMESPACE_END
 

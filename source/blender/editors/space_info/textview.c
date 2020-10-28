@@ -23,8 +23,8 @@
 #include "BLF_api.h"
 
 #include "BLI_math.h"
-#include "BLI_utildefines.h"
 #include "BLI_string_utf8.h"
+#include "BLI_utildefines.h"
 
 #include "GPU_immediate.h"
 #include "GPU_state.h"
@@ -58,7 +58,7 @@ typedef struct TextViewDrawState {
   int scroll_ymin, scroll_ymax;
   int *xy;   // [2]
   int *sel;  // [2]
-  /* Bottom of view == 0, top of file == combine chars, end of line is lower then start. */
+  /* Bottom of view == 0, top of file == combine chars, end of line is lower than start. */
   int *mval_pick_offset;
   const int *mval;  // [2]
   bool do_draw;
@@ -84,9 +84,7 @@ static void textview_draw_sel(const char *str,
     const int sta = BLI_str_utf8_offset_to_column(str, max_ii(sel[0], 0));
     const int end = BLI_str_utf8_offset_to_column(str, min_ii(sel[1], str_len_draw));
 
-    GPU_blend(true);
-    GPU_blend_set_func_separate(
-        GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
+    GPU_blend(GPU_BLEND_ALPHA);
 
     GPUVertFormat *format = immVertexFormat();
     uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
@@ -97,33 +95,34 @@ static void textview_draw_sel(const char *str,
 
     immUnbindProgram();
 
-    GPU_blend(false);
+    GPU_blend(GPU_BLEND_NONE);
   }
 }
 
 /**
- * \warning Allocated memory for 'offsets' must be freed by caller.
+ * \warning Allocated memory for 'r_offsets' must be freed by caller.
  * \return The length in bytes.
  */
-static int textview_wrap_offsets(const char *str, int len, int width, int *lines, int **offsets)
+static int textview_wrap_offsets(
+    const char *str, int len, int width, int *r_lines, int **r_offsets)
 {
   int i, end; /* Offset as unicode code-point. */
   int j;      /* Offset as bytes. */
 
-  *lines = 1;
+  *r_lines = 1;
 
-  *offsets = MEM_callocN(
-      sizeof(**offsets) *
+  *r_offsets = MEM_callocN(
+      sizeof(**r_offsets) *
           (len * BLI_UTF8_WIDTH_MAX / MAX2(1, width - (BLI_UTF8_WIDTH_MAX - 1)) + 1),
       __func__);
-  (*offsets)[0] = 0;
+  (*r_offsets)[0] = 0;
 
   for (i = 0, end = width, j = 0; j < len && str[j]; j += BLI_str_utf8_size_safe(str + j)) {
     int columns = BLI_str_utf8_char_width_safe(str + j);
 
     if (i + columns > end) {
-      (*offsets)[*lines] = j;
-      (*lines)++;
+      (*r_offsets)[*r_lines] = j;
+      (*r_lines)++;
 
       end = i + width;
     }
@@ -185,7 +184,7 @@ static bool textview_draw_string(TextViewDrawState *tds,
     MEM_freeN(offsets);
     return true;
   }
-  else if (y_next < tds->scroll_ymin) {
+  if (y_next < tds->scroll_ymin) {
     /* Have not reached the drawable area so don't break. */
     tds->xy[1] = y_next;
 
@@ -239,7 +238,7 @@ static bool textview_draw_string(TextViewDrawState *tds,
     int vpadding = (tds->lheight + (tds->row_vpadding * 2) - UI_DPI_ICON_SIZE) / 2;
     int hpadding = tds->draw_rect->xmin - (UI_DPI_ICON_SIZE * 1.3f);
 
-    GPU_blend(true);
+    GPU_blend(GPU_BLEND_ALPHA);
     UI_icon_draw_ex(hpadding,
                     line_top - UI_DPI_ICON_SIZE - vpadding,
                     icon,
@@ -248,7 +247,7 @@ static bool textview_draw_string(TextViewDrawState *tds,
                     0.0f,
                     icon_fg,
                     false);
-    GPU_blend(false);
+    GPU_blend(GPU_BLEND_NONE);
   }
 
   tds->xy[1] += tds->row_vpadding;
@@ -263,7 +262,7 @@ static bool textview_draw_string(TextViewDrawState *tds,
 
   if (tds->sel[0] != tds->sel[1]) {
     textview_step_sel(tds, -final_offset);
-    int pos[2] = {tds->xy[0], line_bottom};
+    const int pos[2] = {tds->xy[0], line_bottom};
     textview_draw_sel(s, pos, len, tds, bg_sel);
   }
 
@@ -285,7 +284,7 @@ static bool textview_draw_string(TextViewDrawState *tds,
 
     tds->xy[1] += tds->lheight;
 
-    /* Check if were out of view bounds. */
+    /* Check if we're out of view bounds. */
     if (tds->xy[1] > tds->scroll_ymax) {
       MEM_freeN(offsets);
       return false;
@@ -304,7 +303,7 @@ static bool textview_draw_string(TextViewDrawState *tds,
 /**
  * \param r_mval_pick_item: The resulting item clicked on using \a mval_init.
  * Set from the void pointer which holds the current iterator.
- * It's type depends on the data being iterated over.
+ * Its type depends on the data being iterated over.
  * \param r_mval_pick_offset: The offset in bytes of the \a mval_init.
  * Use for selection.
  */
@@ -393,25 +392,26 @@ int textview_draw(TextViewContext *tvc,
 
       tvc->line_get(tvc, &ext_line, &ext_len);
 
-      if (!textview_draw_string(&tds,
-                                ext_line,
-                                ext_len,
-                                (data_flag & TVC_LINE_FG) ? fg : NULL,
-                                (data_flag & TVC_LINE_BG) ? bg : NULL,
-                                (data_flag & TVC_LINE_ICON) ? icon : 0,
-                                (data_flag & TVC_LINE_ICON_FG) ? icon_fg : NULL,
-                                (data_flag & TVC_LINE_ICON_BG) ? icon_bg : NULL,
-                                bg_sel)) {
-        /* When drawing, if we pass v2d->cur.ymax, then quit. */
-        if (do_draw) {
-          /* Past the y limits. */
-          break;
-        }
-      }
+      const bool is_out_of_view_y = !textview_draw_string(
+          &tds,
+          ext_line,
+          ext_len,
+          (data_flag & TVC_LINE_FG) ? fg : NULL,
+          (data_flag & TVC_LINE_BG) ? bg : NULL,
+          (data_flag & TVC_LINE_ICON) ? icon : 0,
+          (data_flag & TVC_LINE_ICON_FG) ? icon_fg : NULL,
+          (data_flag & TVC_LINE_ICON_BG) ? icon_bg : NULL,
+          bg_sel);
 
       if (do_draw) {
+        /* We always want the cursor to draw. */
         if (tvc->draw_cursor && iter_index == 0) {
-          tvc->draw_cursor(tvc, tds.cwidth, tds.columns, tds.lofs);
+          tvc->draw_cursor(tvc, tds.cwidth, tds.columns);
+        }
+
+        /* When drawing, if we pass v2d->cur.ymax, then quit. */
+        if (is_out_of_view_y) {
+          break;
         }
       }
 
@@ -426,6 +426,11 @@ int textview_draw(TextViewContext *tvc,
   }
 
   tvc->end(tvc);
+
+  /* Sanity checks (bugs here can be tricky to track down). */
+  BLI_assert(tds.lheight == tvc->lheight);
+  BLI_assert(tds.row_vpadding == tvc->row_vpadding);
+  BLI_assert(tds.do_draw == do_draw);
 
   xy[1] += tvc->lheight * 2;
 

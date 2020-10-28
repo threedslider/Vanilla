@@ -17,8 +17,8 @@
 #include "util/util_system.h"
 
 #include "util/util_logging.h"
-#include "util/util_types.h"
 #include "util/util_string.h"
+#include "util/util_types.h"
 
 #include <numaapi.h>
 
@@ -35,8 +35,8 @@ OIIO_NAMESPACE_USING
 #  include <sys/sysctl.h>
 #  include <sys/types.h>
 #else
-#  include <unistd.h>
 #  include <sys/ioctl.h>
+#  include <unistd.h>
 #endif
 
 CCL_NAMESPACE_BEGIN
@@ -166,7 +166,7 @@ static void __cpuid(int data[4], int selector)
 
 string system_cpu_brand_string()
 {
-  char buf[48] = {0};
+  char buf[49] = {0};
   int result[4] = {0};
 
   __cpuid(result, 0x80000000);

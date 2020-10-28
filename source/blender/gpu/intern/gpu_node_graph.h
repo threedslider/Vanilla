@@ -23,14 +23,12 @@
  * Intermediate node graph for generating GLSL shaders.
  */
 
-#ifndef __GPU_NODE_GRAPH_H__
-#define __GPU_NODE_GRAPH_H__
+#pragma once
 
 #include "DNA_customdata_types.h"
 #include "DNA_listBase.h"
 
 #include "GPU_material.h"
-#include "GPU_glew.h"
 #include "GPU_shader.h"
 
 struct GPUNode;
@@ -48,6 +46,8 @@ typedef enum eGPUDataSource {
   GPU_SOURCE_STRUCT,
   GPU_SOURCE_TEX,
   GPU_SOURCE_TEX_TILED_MAPPING,
+  GPU_SOURCE_VOLUME_GRID,
+  GPU_SOURCE_VOLUME_GRID_TRANSFORM,
 } eGPUDataSource;
 
 typedef enum {
@@ -59,6 +59,8 @@ typedef enum {
   GPU_NODE_LINK_IMAGE,
   GPU_NODE_LINK_IMAGE_TILED,
   GPU_NODE_LINK_IMAGE_TILED_MAPPING,
+  GPU_NODE_LINK_VOLUME_GRID,
+  GPU_NODE_LINK_VOLUME_GRID_TRANSFORM,
   GPU_NODE_LINK_OUTPUT,
   GPU_NODE_LINK_UNIFORM,
 } GPUNodeLinkType;
@@ -88,6 +90,8 @@ struct GPUNodeLink {
     eGPUBuiltin builtin;
     /* GPU_NODE_LINK_COLORBAND */
     struct GPUTexture **colorband;
+    /* GPU_NODE_LINK_VOLUME_GRID */
+    struct GPUMaterialVolumeGrid *volume_grid;
     /* GPU_NODE_LINK_OUTPUT */
     struct GPUOutput *output;
     /* GPU_NODE_LINK_ATTR */
@@ -110,7 +114,7 @@ typedef struct GPUInput {
   struct GPUInput *next, *prev;
 
   GPUNode *node;
-  eGPUType type; /* datatype */
+  eGPUType type; /* data-type. */
   GPUNodeLink *link;
   int id; /* unique id as created by code generator */
 
@@ -126,6 +130,8 @@ typedef struct GPUInput {
     struct GPUMaterialTexture *texture;
     /* GPU_SOURCE_ATTR */
     struct GPUMaterialAttribute *attr;
+    /* GPU_SOURCE_VOLUME_GRID | GPU_SOURCE_VOLUME_GRID_TRANSFORM */
+    struct GPUMaterialVolumeGrid *volume_grid;
   };
 } GPUInput;
 
@@ -139,6 +145,7 @@ typedef struct GPUNodeGraph {
   /* Requested attributes and textures. */
   ListBase attributes;
   ListBase textures;
+  ListBase volume_grids;
 } GPUNodeGraph;
 
 /* Node Graph */
@@ -156,5 +163,3 @@ struct GPUTexture **gpu_material_ramp_texture_row_set(struct GPUMaterial *mat,
                                                       float *row);
 
 struct GSet *gpu_material_used_libraries(struct GPUMaterial *material);
-
-#endif /* __GPU_NODE_GRAPH_H__ */

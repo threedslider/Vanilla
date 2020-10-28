@@ -17,14 +17,17 @@
  * All rights reserved.
  */
 
-#ifndef __BKE_ICONS_H__
-#define __BKE_ICONS_H__
+#pragma once
 
 /** \file
  * \ingroup bke
  *
  * Resizable Icons for Blender
  */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef void (*DrawInfoFreeFP)(void *drawinfo);
 
@@ -70,6 +73,8 @@ struct Icon_Geom {
 
 typedef struct Icon Icon;
 
+struct BlendDataReader;
+struct BlendWriter;
 struct ID;
 struct ImBuf;
 struct PreviewImage;
@@ -153,6 +158,9 @@ struct PreviewImage *BKE_previewimg_cached_thumbnail_read(const char *name,
 void BKE_previewimg_cached_release(const char *name);
 void BKE_previewimg_cached_release_pointer(struct PreviewImage *prv);
 
+void BKE_previewimg_blend_write(struct BlendWriter *writer, const struct PreviewImage *prv);
+void BKE_previewimg_blend_read(struct BlendDataReader *reader, struct PreviewImage *prv);
+
 int BKE_icon_geom_ensure(struct Icon_Geom *geom);
 struct Icon_Geom *BKE_icon_geom_from_memory(const uchar *data, size_t data_len);
 struct Icon_Geom *BKE_icon_geom_from_file(const char *filename);
@@ -166,4 +174,6 @@ int BKE_icon_ensure_studio_light(struct StudioLight *sl, int id_type);
 
 #define ICON_RENDER_DEFAULT_HEIGHT 32
 
-#endif /*  __BKE_ICONS_H__ */
+#ifdef __cplusplus
+}
+#endif

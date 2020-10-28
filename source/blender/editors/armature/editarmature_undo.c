@@ -29,7 +29,9 @@
 #include "DNA_object_types.h"
 
 #include "BLI_array_utils.h"
+#include "BLI_listbase.h"
 
+#include "BKE_armature.h"
 #include "BKE_context.h"
 #include "BKE_layer.h"
 #include "BKE_main.h"
@@ -42,8 +44,8 @@
 #include "ED_undo.h"
 #include "ED_util.h"
 
-#include "WM_types.h"
 #include "WM_api.h"
+#include "WM_types.h"
 
 /** We only need this locally. */
 static CLG_LogRef LOG = {"ed.undo.armature"};
@@ -62,8 +64,8 @@ static void undoarm_to_editarm(UndoArmature *uarm, bArmature *arm)
 {
   EditBone *ebone;
 
-  ED_armature_ebone_listbase_free(arm->edbo);
-  ED_armature_ebone_listbase_copy(arm->edbo, &uarm->lb);
+  ED_armature_ebone_listbase_free(arm->edbo, true);
+  ED_armature_ebone_listbase_copy(arm->edbo, &uarm->lb, true);
 
   /* active bone */
   if (uarm->act_edbone) {
@@ -84,7 +86,7 @@ static void *undoarm_from_editarm(UndoArmature *uarm, bArmature *arm)
   /* TODO: include size of ID-properties. */
   uarm->undo_size = 0;
 
-  ED_armature_ebone_listbase_copy(&uarm->lb, arm->edbo);
+  ED_armature_ebone_listbase_copy(&uarm->lb, arm->edbo, false);
 
   /* active bone */
   if (arm->act_edbone) {
@@ -94,7 +96,7 @@ static void *undoarm_from_editarm(UndoArmature *uarm, bArmature *arm)
 
   ED_armature_ebone_listbase_temp_clear(&uarm->lb);
 
-  for (EditBone *ebone = uarm->lb.first; ebone; ebone = ebone->next) {
+  LISTBASE_FOREACH (EditBone *, ebone, &uarm->lb) {
     uarm->undo_size += sizeof(EditBone);
   }
 
@@ -103,7 +105,7 @@ static void *undoarm_from_editarm(UndoArmature *uarm, bArmature *arm)
 
 static void undoarm_free_data(UndoArmature *uarm)
 {
-  ED_armature_ebone_listbase_free(&uarm->lb);
+  ED_armature_ebone_listbase_free(&uarm->lb, false);
 }
 
 static Object *editarm_object_from_context(bContext *C)

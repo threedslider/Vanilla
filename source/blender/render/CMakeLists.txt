@@ -32,16 +32,14 @@ set(INC
   ../makesdna
   ../makesrna
   ../nodes
-  ../physics
+  ../sequencer
+  ../simulation
   ../../../intern/atomic
   ../../../intern/guardedalloc
   ../../../intern/mikktspace
   ../../../intern/mantaflow/extern
 )
 
-set(INC_SYS
-  ${GLEW_INCLUDE_PATH}
-)
 
 set(SRC
   intern/source/bake_api.c
@@ -107,5 +105,6 @@ if(APPLE)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -mfpmath=sse")
   endif()
 endif()
+
 
 blender_add_lib_nolist(bf_render "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")

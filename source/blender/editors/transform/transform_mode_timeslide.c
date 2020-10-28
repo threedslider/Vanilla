@@ -45,9 +45,7 @@
 #include "transform_mode.h"
 
 /* -------------------------------------------------------------------- */
-/* Transform (Animation Time Slide) */
-
-/** \name Transform Animation Time Slide
+/** \name Transform (Animation Time Slide)
  * \{ */
 
 static void headerTimeSlide(TransInfo *t, const float sval, char str[UI_MAX_DRAW_STR])
@@ -82,7 +80,7 @@ static void applyTimeSlideValue(TransInfo *t, float sval, float cval)
 
   /* set value for drawing black line */
   if (t->spacetype == SPACE_ACTION) {
-    SpaceAction *saction = (SpaceAction *)t->sa->spacedata.first;
+    SpaceAction *saction = (SpaceAction *)t->area->spacedata.first;
     saction->timeslide = cval;
   }
 
@@ -147,7 +145,7 @@ static void applyTimeSlide(TransInfo *t, const int mval[2])
   UI_view2d_region_to_view(v2d, t->mouse.imval[0], t->mouse.imval[1], &sval[0], &sval[1]);
 
   /* t->values_final[0] stores cval[0], which is the current mouse-pointer location (in frames) */
-  // XXX Need to be able to repeat this
+  /* XXX Need to be able to repeat this. */
   /* t->values_final[0] = cval[0]; */ /* UNUSED (reset again later). */
 
   /* handle numeric-input stuff */
@@ -160,14 +158,14 @@ static void applyTimeSlide(TransInfo *t, const int mval[2])
 
   recalcData(t);
 
-  ED_area_status_text(t->sa, str);
+  ED_area_status_text(t->area, str);
 }
 
 void initTimeSlide(TransInfo *t)
 {
   /* this tool is only really available in the Action Editor... */
   if (t->spacetype == SPACE_ACTION) {
-    SpaceAction *saction = (SpaceAction *)t->sa->spacedata.first;
+    SpaceAction *saction = (SpaceAction *)t->area->spacedata.first;
 
     /* set flag for drawing stuff */
     saction->flag |= SACTION_MOVING;
@@ -225,10 +223,9 @@ void initTimeSlide(TransInfo *t)
   t->num.idx_max = t->idx_max;
 
   /* initialize snap like for everything else */
-  t->snap[0] = 0.0f;
-  t->snap[1] = t->snap[2] = 1.0f;
+  t->snap[0] = t->snap[1] = 1.0f;
 
-  copy_v3_fl(t->num.val_inc, t->snap[1]);
+  copy_v3_fl(t->num.val_inc, t->snap[0]);
   t->num.unit_sys = t->scene->unit.system;
   /* No time unit supporting frames currently... */
   t->num.unit_type[0] = B_UNIT_NONE;

@@ -20,9 +20,9 @@
 
 #ifndef WITH_PYTHON_MODULE
 
+#  include <errno.h>
 #  include <stdlib.h>
 #  include <string.h>
-#  include <errno.h>
 
 #  include "MEM_guardedalloc.h"
 
@@ -33,15 +33,15 @@
 #  endif
 
 #  include "BLI_args.h"
-#  include "BLI_threads.h"
-#  include "BLI_utildefines.h"
+#  include "BLI_fileops.h"
 #  include "BLI_listbase.h"
+#  include "BLI_mempool.h"
+#  include "BLI_path_util.h"
 #  include "BLI_string.h"
 #  include "BLI_string_utf8.h"
-#  include "BLI_path_util.h"
-#  include "BLI_fileops.h"
-#  include "BLI_mempool.h"
 #  include "BLI_system.h"
+#  include "BLI_threads.h"
+#  include "BLI_utildefines.h"
 
 #  include "BLO_readfile.h" /* only for BLO_has_bfile_extension */
 
@@ -51,7 +51,6 @@
 #  include "BKE_global.h"
 #  include "BKE_image.h"
 #  include "BKE_lib_id.h"
-#  include "BKE_lib_override.h"
 #  include "BKE_main.h"
 #  include "BKE_report.h"
 #  include "BKE_scene.h"
@@ -62,7 +61,8 @@
 #  endif
 
 #  ifdef WITH_PYTHON
-#    include "BPY_extern.h"
+#    include "BPY_extern_python.h"
+#    include "BPY_extern_run.h"
 #  endif
 
 #  include "RE_engine.h"
@@ -460,7 +460,7 @@ static void arg_py_context_restore(bContext *C, struct BlendePyContextStore *c_p
 
 static void print_version_full(void)
 {
-  printf(BLEND_VERSION_STRING_FMT);
+  printf("Blender %s\n", BKE_blender_version_string());
 #  ifdef BUILD_DATE
   printf("\tbuild date: %s\n", build_date);
   printf("\tbuild time: %s\n", build_time);
@@ -481,13 +481,13 @@ static void print_version_short(void)
 #  ifdef BUILD_DATE
   /* NOTE: We include built time since sometimes we need to tell broken from
    * working built of the same hash. */
-  printf(BLEND_VERSION_FMT " (hash %s built %s %s)\n",
-         BLEND_VERSION_ARG,
+  printf("Blender %s (hash %s built %s %s)\n",
+         BKE_blender_version_string(),
          build_hash,
          build_date,
          build_time);
 #  else
-  printf(BLEND_VERSION_STRING_FMT);
+  printf("Blender %s\n", BKE_blender_version_string());
 #  endif
 }
 
@@ -513,7 +513,7 @@ static int arg_handle_print_help(int UNUSED(argc), const char **UNUSED(argv), vo
 {
   bArgs *ba = (bArgs *)data;
 
-  printf(BLEND_VERSION_STRING_FMT);
+  printf("Blender %s\n", BKE_blender_version_string());
   printf("Usage: blender [args ...] [file] [args ...]\n\n");
 
   printf("Render Options:\n");
@@ -603,6 +603,10 @@ static int arg_handle_print_help(int UNUSED(argc), const char **UNUSED(argv), vo
   BLI_argsPrintArgDoc(ba, "--debug-gpu-shaders");
   BLI_argsPrintArgDoc(ba, "--debug-gpu-force-workarounds");
   BLI_argsPrintArgDoc(ba, "--debug-wm");
+#  ifdef WITH_XR_OPENXR
+  BLI_argsPrintArgDoc(ba, "--debug-xr");
+  BLI_argsPrintArgDoc(ba, "--debug-xr-time");
+#  endif
   BLI_argsPrintArgDoc(ba, "--debug-all");
   BLI_argsPrintArgDoc(ba, "--debug-io");
 
@@ -615,7 +619,6 @@ static int arg_handle_print_help(int UNUSED(argc), const char **UNUSED(argv), vo
   printf("Misc Options:\n");
   BLI_argsPrintArgDoc(ba, "--app-template");
   BLI_argsPrintArgDoc(ba, "--factory-startup");
-  BLI_argsPrintArgDoc(ba, "--enable-library-override");
   BLI_argsPrintArgDoc(ba, "--enable-event-simulate");
   printf("\n");
   BLI_argsPrintArgDoc(ba, "--env-system-datafiles");
@@ -679,7 +682,6 @@ static int arg_handle_print_help(int UNUSED(argc), const char **UNUSED(argv), vo
 #  ifdef WITH_SDL
   printf("  $SDL_AUDIODRIVER          LibSDL audio driver - alsa, esd, dma.\n");
 #  endif
-  printf("  $PYTHONHOME               Path to the Python directory, eg. /usr/lib/python.\n\n");
 
   exit(0);
 
@@ -746,6 +748,25 @@ static int arg_handle_abort_handler_disable(int UNUSED(argc),
                                             void *UNUSED(data))
 {
   app_state.signal.use_abort_handler = false;
+  return 0;
+}
+
+static void clog_abort_on_error_callback(void *fp)
+{
+  BLI_system_backtrace(fp);
+  fflush(fp);
+  abort();
+}
+
+static const char arg_handle_debug_exit_on_error_doc[] =
+    "\n\t"
+    "Immediately exit when internal errors are detected.";
+static int arg_handle_debug_exit_on_error(int UNUSED(argc),
+                                          const char **UNUSED(argv),
+                                          void *UNUSED(data))
+{
+  MEM_enable_fail_on_memleak();
+  CLG_error_fn_set(clog_abort_on_error_callback);
   return 0;
 }
 
@@ -903,7 +924,7 @@ static const char arg_handle_debug_mode_set_doc[] =
 static int arg_handle_debug_mode_set(int UNUSED(argc), const char **UNUSED(argv), void *data)
 {
   G.debug |= G_DEBUG; /* std output printf's */
-  printf(BLEND_VERSION_STRING_FMT);
+  printf("Blender %s\n", BKE_blender_version_string());
   MEM_set_memory_debug();
 #  ifndef NDEBUG
   BLI_mempool_set_memory_debug();
@@ -940,12 +961,22 @@ static const char arg_handle_debug_mode_generic_set_doc_wm[] =
     "\n\t"
     "Enable debug messages for the window manager, shows all operators in search, shows "
     "keymap errors.";
+#  ifdef WITH_XR_OPENXR
+static const char arg_handle_debug_mode_generic_set_doc_xr[] =
+    "\n\t"
+    "Enable debug messages for virtual reality contexts.\n"
+    "\tEnables the OpenXR API validation layer, (OpenXR) debug messages and general information "
+    "prints.";
+static const char arg_handle_debug_mode_generic_set_doc_xr_time[] =
+    "\n\t"
+    "Enable debug messages for virtual reality frame rendering times.";
+#  endif
 static const char arg_handle_debug_mode_generic_set_doc_jobs[] =
     "\n\t"
     "Enable time profiling for background jobs.";
 static const char arg_handle_debug_mode_generic_set_doc_gpu[] =
     "\n\t"
-    "Enable gpu debug context and information for OpenGL 4.3+.";
+    "Enable GPU debug context and information for OpenGL 4.3+.";
 static const char arg_handle_debug_mode_generic_set_doc_depsgraph[] =
     "\n\t"
     "Enable all debug messages from dependency graph.";
@@ -981,7 +1012,7 @@ static int arg_handle_debug_mode_generic_set(int UNUSED(argc),
 
 static const char arg_handle_debug_mode_io_doc[] =
     "\n\t"
-    "Enable debug messages for I/O (collada, ...).";
+    "Enable debug messages for I/O (Collada, ...).";
 static int arg_handle_debug_mode_io(int UNUSED(argc),
                                     const char **UNUSED(argv),
                                     void *UNUSED(data))
@@ -1105,17 +1136,6 @@ static int arg_handle_factory_startup_set(int UNUSED(argc),
 {
   G.factory_startup = 1;
   G.f |= G_FLAG_USERPREF_NO_SAVE_ON_EXIT;
-  return 0;
-}
-
-static const char arg_handle_disable_override_library_doc[] =
-    "\n\t"
-    "Enable Library Override features in the UI.";
-static int arg_handle_disable_override_library(int UNUSED(argc),
-                                               const char **UNUSED(argv),
-                                               void *UNUSED(data))
-{
-  BKE_lib_override_library_enable(false);
   return 0;
 }
 
@@ -1299,7 +1319,7 @@ static int arg_handle_register_extension(int UNUSED(argc), const char **UNUSED(a
   if (data) {
     G.background = 1;
   }
-  RegisterBlendExtension();
+  BLI_windows_register_blend_extension(G.background);
 #  else
   (void)data; /* unused */
 #  endif
@@ -1355,6 +1375,7 @@ static int arg_handle_output_set(int argc, const char **argv, void *data)
     Scene *scene = CTX_data_scene(C);
     if (scene) {
       BLI_strncpy(scene->r.pic, argv[1], sizeof(scene->r.pic));
+      DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE);
     }
     else {
       printf("\nError: no blend loaded. cannot use '-o / --render-output'.\n");
@@ -1370,7 +1391,7 @@ static int arg_handle_output_set(int argc, const char **argv, void *data)
 static const char arg_handle_engine_set_doc[] =
     "<engine>\n"
     "\tSpecify the render engine.\n"
-    "\tUse '-E' help to list available engines.";
+    "\tUse '-E help' to list available engines.";
 static int arg_handle_engine_set(int argc, const char **argv, void *data)
 {
   bContext *C = data;
@@ -1388,6 +1409,7 @@ static int arg_handle_engine_set(int argc, const char **argv, void *data)
       if (scene) {
         if (BLI_findstring(&R_engines, argv[1], offsetof(RenderEngineType, idname))) {
           BLI_strncpy_utf8(scene->r.engine, argv[1], sizeof(scene->r.engine));
+          DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE);
         }
         else {
           printf("\nError: engine not found '%s'\n", argv[1]);
@@ -1433,6 +1455,7 @@ static int arg_handle_image_type_set(int argc, const char **argv, void *data)
       }
       else {
         scene->r.im_format.imtype = imtype_new;
+        DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE);
       }
     }
     else {
@@ -1443,7 +1466,7 @@ static int arg_handle_image_type_set(int argc, const char **argv, void *data)
     return 1;
   }
   else {
-    printf("\nError: you must specify a format after '-F  / --render-foramt'.\n");
+    printf("\nError: you must specify a format after '-F  / --render-format'.\n");
     return 0;
   }
 }
@@ -1480,7 +1503,7 @@ static int arg_handle_threads_set(int argc, const char **argv, void *UNUSED(data
 
 static const char arg_handle_verbosity_set_doc[] =
     "<verbose>\n"
-    "\tSet logging verbosity level for debug messages which supports it.";
+    "\tSet the logging verbosity level for debug messages that support it.";
 static int arg_handle_verbosity_set(int argc, const char **argv, void *UNUSED(data))
 {
   const char *arg_id = "--verbose";
@@ -1518,9 +1541,11 @@ static int arg_handle_extension_set(int argc, const char **argv, void *data)
     if (scene) {
       if (argv[1][0] == '0') {
         scene->r.scemode &= ~R_EXTENSION;
+        DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE);
       }
       else if (argv[1][0] == '1') {
         scene->r.scemode |= R_EXTENSION;
+        DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE);
       }
       else {
         printf("\nError: Use '-x 1 / -x 0' To set the extension option or '--use-extension'\n");
@@ -1573,7 +1598,6 @@ static int arg_handle_render_frame(int argc, const char **argv, void *data)
       }
 
       re = RE_NewSceneRender(scene);
-      BLI_threaded_malloc_begin();
       BKE_reports_init(&reports, RPT_STORE);
       RE_SetReports(re, &reports);
       for (int i = 0; i < frames_range_len; i++) {
@@ -1589,7 +1613,6 @@ static int arg_handle_render_frame(int argc, const char **argv, void *data)
       }
       RE_SetReports(re, NULL);
       BKE_reports_clear(&reports);
-      BLI_threaded_malloc_end();
       MEM_freeN(frame_range_arr);
       return 1;
     }
@@ -1615,13 +1638,11 @@ static int arg_handle_render_animation(int UNUSED(argc), const char **UNUSED(arg
     Main *bmain = CTX_data_main(C);
     Render *re = RE_NewSceneRender(scene);
     ReportList reports;
-    BLI_threaded_malloc_begin();
     BKE_reports_init(&reports, RPT_STORE);
     RE_SetReports(re, &reports);
     RE_RenderAnim(re, bmain, scene, NULL, NULL, scene->r.sfra, scene->r.efra, scene->r.frame_step);
     RE_SetReports(re, NULL);
     BKE_reports_clear(&reports);
-    BLI_threaded_malloc_end();
   }
   else {
     printf("\nError: no blend loaded. cannot use '-a'.\n");
@@ -1679,6 +1700,9 @@ static int arg_handle_frame_start_set(int argc, const char **argv, void *data)
                                     &err_msg)) {
         printf("\nError: %s '%s %s'.\n", err_msg, arg_id, argv[1]);
       }
+      else {
+        DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE);
+      }
       return 1;
     }
     else {
@@ -1713,6 +1737,9 @@ static int arg_handle_frame_end_set(int argc, const char **argv, void *data)
                                     &err_msg)) {
         printf("\nError: %s '%s %s'.\n", err_msg, arg_id, argv[1]);
       }
+      else {
+        DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE);
+      }
       return 1;
     }
     else {
@@ -1740,6 +1767,9 @@ static int arg_handle_frame_skip_set(int argc, const char **argv, void *data)
       if (!parse_int_clamp(argv[1], NULL, 1, MAXFRAME, &scene->r.frame_step, &err_msg)) {
         printf("\nError: %s '%s %s'.\n", err_msg, arg_id, argv[1]);
       }
+      else {
+        DEG_id_tag_update(&scene->id, ID_RECALC_COPY_ON_WRITE);
+      }
       return 1;
     }
     else {
@@ -1766,10 +1796,10 @@ static int arg_handle_python_file_run(int argc, const char **argv, void *data)
     /* Make the path absolute because its needed for relative linked blends to be found */
     char filename[FILE_MAX];
     BLI_strncpy(filename, argv[1], sizeof(filename));
-    BLI_path_cwd(filename, sizeof(filename));
+    BLI_path_abs_from_cwd(filename, sizeof(filename));
 
     bool ok;
-    BPY_CTX_SETUP(ok = BPY_execute_filepath(C, filename, NULL));
+    BPY_CTX_SETUP(ok = BPY_run_filepath(C, filename, NULL));
     if (!ok && app_state.exit_code_on_error.python) {
       printf("\nError: script failed, file: '%s', exiting.\n", argv[1]);
       BPY_python_end();
@@ -1804,7 +1834,7 @@ static int arg_handle_python_text_run(int argc, const char **argv, void *data)
     bool ok;
 
     if (text) {
-      BPY_CTX_SETUP(ok = BPY_execute_text(C, text, NULL, false));
+      BPY_CTX_SETUP(ok = BPY_run_text(C, text, NULL, false));
     }
     else {
       printf("\nError: text block not found %s.\n", argv[1]);
@@ -1841,7 +1871,7 @@ static int arg_handle_python_expr_run(int argc, const char **argv, void *data)
   /* workaround for scripts not getting a bpy.context.scene, causes internal errors elsewhere */
   if (argc > 1) {
     bool ok;
-    BPY_CTX_SETUP(ok = BPY_execute_string_ex(C, NULL, argv[1], false));
+    BPY_CTX_SETUP(ok = BPY_run_string_exec(C, NULL, argv[1]));
     if (!ok && app_state.exit_code_on_error.python) {
       printf("\nError: script failed, expr: '%s', exiting.\n", argv[1]);
       BPY_python_end();
@@ -1868,7 +1898,7 @@ static int arg_handle_python_console_run(int UNUSED(argc), const char **argv, vo
 #  ifdef WITH_PYTHON
   bContext *C = data;
 
-  BPY_CTX_SETUP(BPY_execute_string(C, (const char *[]){"code", NULL}, "code.interact()"));
+  BPY_CTX_SETUP(BPY_run_string_eval(C, (const char *[]){"code", NULL}, "code.interact()"));
 
   return 0;
 #  else
@@ -1910,12 +1940,15 @@ static int arg_handle_python_exit_code_set(int argc, const char **argv, void *UN
 
 static const char arg_handle_python_use_system_env_set_doc[] =
     "\n\t"
-    "Allow Python to use system environment variables such as 'PYTHONPATH'.";
+    "Allow Python to use system environment variables such as 'PYTHONPATH' and the user "
+    "site-packages directory.";
 static int arg_handle_python_use_system_env_set(int UNUSED(argc),
                                                 const char **UNUSED(argv),
                                                 void *UNUSED(data))
 {
+#  ifdef WITH_PYTHON
   BPY_python_use_system_env();
+#  endif
   return 0;
 }
 
@@ -1938,7 +1971,7 @@ static int arg_handle_addons_set(int argc, const char **argv, void *data)
     BLI_snprintf(str, slen, script_str, argv[1]);
 
     BLI_assert(strlen(str) + 1 == slen);
-    BPY_CTX_SETUP(BPY_execute_string_ex(C, NULL, str, false));
+    BPY_CTX_SETUP(BPY_run_string_exec(C, NULL, str));
     free(str);
 #  else
     UNUSED_VARS(argv, data);
@@ -1966,7 +1999,7 @@ static int arg_handle_load_file(int UNUSED(argc), const char **argv, void *data)
   }
 
   BLI_strncpy(filename, argv[0], sizeof(filename));
-  BLI_path_cwd(filename, sizeof(filename));
+  BLI_path_abs_from_cwd(filename, sizeof(filename));
 
   /* load the file */
   BKE_reports_init(&reports, RPT_PRINT);
@@ -2020,42 +2053,58 @@ void main_args_setup(bContext *C, bArgs *ba)
 #  define CB(a) a##_doc, a
 #  define CB_EX(a, b) a##_doc_##b, a
 
-  // BLI_argsAdd(ba, pass, short_arg, long_arg, doc, cb, C);
-
   /* end argument processing after -- */
-  BLI_argsAdd(ba, -1, "--", NULL, CB(arg_handle_arguments_end), NULL);
+  BLI_argsPassSet(ba, -1);
+  BLI_argsAdd(ba, "--", NULL, CB(arg_handle_arguments_end), NULL);
 
-  /* first pass: background mode, disable python and commands that exit after usage */
-  BLI_argsAdd(ba, 1, "-h", "--help", CB(arg_handle_print_help), ba);
+  /* Pass: Environment Setup
+   *
+   * It's important these run before any initialization is done, since they set up
+   * the environment used to access data-files, which are be used when initializing
+   * sub-systems such as color management. */
+  BLI_argsPassSet(ba, ARG_PASS_ENVIRONMENT);
+  BLI_argsAdd(ba, NULL, "--python-use-system-env", CB(arg_handle_python_use_system_env_set), NULL);
+
+  /* Note that we could add used environment variables too. */
+  BLI_argsAdd(
+      ba, NULL, "--env-system-datafiles", CB_EX(arg_handle_env_system_set, datafiles), NULL);
+  BLI_argsAdd(ba, NULL, "--env-system-scripts", CB_EX(arg_handle_env_system_set, scripts), NULL);
+  BLI_argsAdd(ba, NULL, "--env-system-python", CB_EX(arg_handle_env_system_set, python), NULL);
+
+  /* Pass: Background Mode & Settings
+   *
+   * Also and commands that exit after usage. */
+  BLI_argsPassSet(ba, ARG_PASS_SETTINGS);
+  BLI_argsAdd(ba, "-h", "--help", CB(arg_handle_print_help), ba);
   /* Windows only */
-  BLI_argsAdd(ba, 1, "/?", NULL, CB_EX(arg_handle_print_help, win32), ba);
+  BLI_argsAdd(ba, "/?", NULL, CB_EX(arg_handle_print_help, win32), ba);
 
-  BLI_argsAdd(ba, 1, "-v", "--version", CB(arg_handle_print_version), NULL);
+  BLI_argsAdd(ba, "-v", "--version", CB(arg_handle_print_version), NULL);
 
+  BLI_argsAdd(ba, "-y", "--enable-autoexec", CB_EX(arg_handle_python_set, enable), (void *)true);
   BLI_argsAdd(
-      ba, 1, "-y", "--enable-autoexec", CB_EX(arg_handle_python_set, enable), (void *)true);
-  BLI_argsAdd(
-      ba, 1, "-Y", "--disable-autoexec", CB_EX(arg_handle_python_set, disable), (void *)false);
+      ba, "-Y", "--disable-autoexec", CB_EX(arg_handle_python_set, disable), (void *)false);
 
-  BLI_argsAdd(ba, 1, NULL, "--disable-crash-handler", CB(arg_handle_crash_handler_disable), NULL);
-  BLI_argsAdd(ba, 1, NULL, "--disable-abort-handler", CB(arg_handle_abort_handler_disable), NULL);
+  BLI_argsAdd(ba, NULL, "--disable-crash-handler", CB(arg_handle_crash_handler_disable), NULL);
+  BLI_argsAdd(ba, NULL, "--disable-abort-handler", CB(arg_handle_abort_handler_disable), NULL);
 
-  BLI_argsAdd(ba, 1, "-b", "--background", CB(arg_handle_background_mode_set), NULL);
+  BLI_argsAdd(ba, "-t", "--threads", CB(arg_handle_threads_set), NULL);
 
-  BLI_argsAdd(ba, 1, "-a", NULL, CB(arg_handle_playback_mode), NULL);
+  BLI_argsAdd(ba, "-b", "--background", CB(arg_handle_background_mode_set), NULL);
 
-  BLI_argsAdd(ba, 1, NULL, "--log", CB(arg_handle_log_set), ba);
-  BLI_argsAdd(ba, 1, NULL, "--log-level", CB(arg_handle_log_level_set), ba);
-  BLI_argsAdd(ba, 1, NULL, "--log-show-basename", CB(arg_handle_log_show_basename_set), ba);
-  BLI_argsAdd(ba, 1, NULL, "--log-show-backtrace", CB(arg_handle_log_show_backtrace_set), ba);
-  BLI_argsAdd(ba, 1, NULL, "--log-show-timestamp", CB(arg_handle_log_show_timestamp_set), ba);
-  BLI_argsAdd(ba, 1, NULL, "--log-file", CB(arg_handle_log_file_set), ba);
+  BLI_argsAdd(ba, "-a", NULL, CB(arg_handle_playback_mode), NULL);
 
-  BLI_argsAdd(ba, 1, "-d", "--debug", CB(arg_handle_debug_mode_set), ba);
+  BLI_argsAdd(ba, NULL, "--log", CB(arg_handle_log_set), ba);
+  BLI_argsAdd(ba, NULL, "--log-level", CB(arg_handle_log_level_set), ba);
+  BLI_argsAdd(ba, NULL, "--log-show-basename", CB(arg_handle_log_show_basename_set), ba);
+  BLI_argsAdd(ba, NULL, "--log-show-backtrace", CB(arg_handle_log_show_backtrace_set), ba);
+  BLI_argsAdd(ba, NULL, "--log-show-timestamp", CB(arg_handle_log_show_timestamp_set), ba);
+  BLI_argsAdd(ba, NULL, "--log-file", CB(arg_handle_log_file_set), ba);
+
+  BLI_argsAdd(ba, "-d", "--debug", CB(arg_handle_debug_mode_set), ba);
 
 #  ifdef WITH_FFMPEG
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-ffmpeg",
               CB_EX(arg_handle_debug_mode_generic_set, ffmpeg),
@@ -2064,7 +2113,7 @@ void main_args_setup(bContext *C, bArgs *ba)
 
 #  ifdef WITH_FREESTYLE
   BLI_argsAdd(ba,
-              1,
+
               NULL,
               "--debug-freestyle",
               CB_EX(arg_handle_debug_mode_generic_set, freestyle),
@@ -2072,172 +2121,163 @@ void main_args_setup(bContext *C, bArgs *ba)
 #  endif
 
   BLI_argsAdd(ba,
-              1,
+
               NULL,
               "--debug-python",
               CB_EX(arg_handle_debug_mode_generic_set, python),
               (void *)G_DEBUG_PYTHON);
   BLI_argsAdd(ba,
-              1,
+
               NULL,
               "--debug-events",
               CB_EX(arg_handle_debug_mode_generic_set, events),
               (void *)G_DEBUG_EVENTS);
   BLI_argsAdd(ba,
-              1,
+
               NULL,
               "--debug-handlers",
               CB_EX(arg_handle_debug_mode_generic_set, handlers),
               (void *)G_DEBUG_HANDLERS);
   BLI_argsAdd(
-      ba, 1, NULL, "--debug-wm", CB_EX(arg_handle_debug_mode_generic_set, wm), (void *)G_DEBUG_WM);
+      ba, NULL, "--debug-wm", CB_EX(arg_handle_debug_mode_generic_set, wm), (void *)G_DEBUG_WM);
+#  ifdef WITH_XR_OPENXR
+  BLI_argsAdd(
+      ba, NULL, "--debug-xr", CB_EX(arg_handle_debug_mode_generic_set, xr), (void *)G_DEBUG_XR);
   BLI_argsAdd(ba,
-              1,
+
+              NULL,
+              "--debug-xr-time",
+              CB_EX(arg_handle_debug_mode_generic_set, xr_time),
+              (void *)G_DEBUG_XR_TIME);
+#  endif
+  BLI_argsAdd(ba,
               NULL,
               "--debug-ghost",
               CB_EX(arg_handle_debug_mode_generic_set, handlers),
               (void *)G_DEBUG_GHOST);
-  BLI_argsAdd(ba, 1, NULL, "--debug-all", CB(arg_handle_debug_mode_all), NULL);
+  BLI_argsAdd(ba, NULL, "--debug-all", CB(arg_handle_debug_mode_all), NULL);
 
-  BLI_argsAdd(ba, 1, NULL, "--debug-io", CB(arg_handle_debug_mode_io), NULL);
+  BLI_argsAdd(ba, NULL, "--debug-io", CB(arg_handle_debug_mode_io), NULL);
 
-  BLI_argsAdd(ba, 1, NULL, "--debug-fpe", CB(arg_handle_debug_fpe_set), NULL);
+  BLI_argsAdd(ba, NULL, "--debug-fpe", CB(arg_handle_debug_fpe_set), NULL);
 
 #  ifdef WITH_LIBMV
-  BLI_argsAdd(ba, 1, NULL, "--debug-libmv", CB(arg_handle_debug_mode_libmv), NULL);
+  BLI_argsAdd(ba, NULL, "--debug-libmv", CB(arg_handle_debug_mode_libmv), NULL);
 #  endif
 #  ifdef WITH_CYCLES_LOGGING
-  BLI_argsAdd(ba, 1, NULL, "--debug-cycles", CB(arg_handle_debug_mode_cycles), NULL);
+  BLI_argsAdd(ba, NULL, "--debug-cycles", CB(arg_handle_debug_mode_cycles), NULL);
 #  endif
-  BLI_argsAdd(ba, 1, NULL, "--debug-memory", CB(arg_handle_debug_mode_memory_set), NULL);
+  BLI_argsAdd(ba, NULL, "--debug-memory", CB(arg_handle_debug_mode_memory_set), NULL);
 
-  BLI_argsAdd(ba, 1, NULL, "--debug-value", CB(arg_handle_debug_value_set), NULL);
+  BLI_argsAdd(ba, NULL, "--debug-value", CB(arg_handle_debug_value_set), NULL);
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-jobs",
               CB_EX(arg_handle_debug_mode_generic_set, jobs),
               (void *)G_DEBUG_JOBS);
+  BLI_argsAdd(
+      ba, NULL, "--debug-gpu", CB_EX(arg_handle_debug_mode_generic_set, gpu), (void *)G_DEBUG_GPU);
   BLI_argsAdd(ba,
-              1,
-              NULL,
-              "--debug-gpu",
-              CB_EX(arg_handle_debug_mode_generic_set, gpu),
-              (void *)G_DEBUG_GPU);
-  BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-depsgraph",
               CB_EX(arg_handle_debug_mode_generic_set, depsgraph),
               (void *)G_DEBUG_DEPSGRAPH);
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-depsgraph-build",
               CB_EX(arg_handle_debug_mode_generic_set, depsgraph_build),
               (void *)G_DEBUG_DEPSGRAPH_BUILD);
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-depsgraph-eval",
               CB_EX(arg_handle_debug_mode_generic_set, depsgraph_eval),
               (void *)G_DEBUG_DEPSGRAPH_EVAL);
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-depsgraph-tag",
               CB_EX(arg_handle_debug_mode_generic_set, depsgraph_tag),
               (void *)G_DEBUG_DEPSGRAPH_TAG);
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-depsgraph-time",
               CB_EX(arg_handle_debug_mode_generic_set, depsgraph_time),
               (void *)G_DEBUG_DEPSGRAPH_TIME);
   BLI_argsAdd(ba,
-              1,
+
               NULL,
               "--debug-depsgraph-no-threads",
               CB_EX(arg_handle_debug_mode_generic_set, depsgraph_no_threads),
               (void *)G_DEBUG_DEPSGRAPH_NO_THREADS);
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-depsgraph-pretty",
               CB_EX(arg_handle_debug_mode_generic_set, depsgraph_pretty),
               (void *)G_DEBUG_DEPSGRAPH_PRETTY);
   BLI_argsAdd(ba,
-              1,
+              NULL,
+              "--debug-depsgraph-uuid",
+              CB_EX(arg_handle_debug_mode_generic_set, depsgraph_build),
+              (void *)G_DEBUG_DEPSGRAPH_UUID);
+  BLI_argsAdd(ba,
               NULL,
               "--debug-gpumem",
               CB_EX(arg_handle_debug_mode_generic_set, gpumem),
               (void *)G_DEBUG_GPU_MEM);
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-gpu-shaders",
               CB_EX(arg_handle_debug_mode_generic_set, gpumem),
               (void *)G_DEBUG_GPU_SHADERS);
   BLI_argsAdd(ba,
-              1,
               NULL,
               "--debug-gpu-force-workarounds",
               CB_EX(arg_handle_debug_mode_generic_set, gpumem),
               (void *)G_DEBUG_GPU_FORCE_WORKAROUNDS);
+  BLI_argsAdd(ba, NULL, "--debug-exit-on-error", CB(arg_handle_debug_exit_on_error), NULL);
 
-  BLI_argsAdd(ba, 1, NULL, "--verbose", CB(arg_handle_verbosity_set), NULL);
+  BLI_argsAdd(ba, NULL, "--verbose", CB(arg_handle_verbosity_set), NULL);
 
-  BLI_argsAdd(ba, 1, NULL, "--app-template", CB(arg_handle_app_template), NULL);
-  BLI_argsAdd(ba, 1, NULL, "--factory-startup", CB(arg_handle_factory_startup_set), NULL);
-  BLI_argsAdd(
-      ba, 1, NULL, "--disable-library-override", CB(arg_handle_disable_override_library), NULL);
-  BLI_argsAdd(ba, 1, NULL, "--enable-event-simulate", CB(arg_handle_enable_event_simulate), NULL);
+  BLI_argsAdd(ba, NULL, "--app-template", CB(arg_handle_app_template), NULL);
+  BLI_argsAdd(ba, NULL, "--factory-startup", CB(arg_handle_factory_startup_set), NULL);
+  BLI_argsAdd(ba, NULL, "--enable-event-simulate", CB(arg_handle_enable_event_simulate), NULL);
 
-  /* TODO, add user env vars? */
-  BLI_argsAdd(
-      ba, 1, NULL, "--env-system-datafiles", CB_EX(arg_handle_env_system_set, datafiles), NULL);
-  BLI_argsAdd(
-      ba, 1, NULL, "--env-system-scripts", CB_EX(arg_handle_env_system_set, scripts), NULL);
-  BLI_argsAdd(ba, 1, NULL, "--env-system-python", CB_EX(arg_handle_env_system_set, python), NULL);
+  /* Pass: Custom Window Stuff. */
+  BLI_argsPassSet(ba, ARG_PASS_SETTINGS_GUI);
+  BLI_argsAdd(ba, "-p", "--window-geometry", CB(arg_handle_window_geometry), NULL);
+  BLI_argsAdd(ba, "-w", "--window-border", CB(arg_handle_with_borders), NULL);
+  BLI_argsAdd(ba, "-W", "--window-fullscreen", CB(arg_handle_without_borders), NULL);
+  BLI_argsAdd(ba, "-M", "--window-maximized", CB(arg_handle_window_maximized), NULL);
+  BLI_argsAdd(ba, NULL, "--no-window-focus", CB(arg_handle_no_window_focus), NULL);
+  BLI_argsAdd(ba, "-con", "--start-console", CB(arg_handle_start_with_console), NULL);
+  BLI_argsAdd(ba, "-R", NULL, CB(arg_handle_register_extension), NULL);
+  BLI_argsAdd(ba, "-r", NULL, CB_EX(arg_handle_register_extension, silent), ba);
+  BLI_argsAdd(ba, NULL, "--no-native-pixels", CB(arg_handle_native_pixels_set), ba);
 
-  BLI_argsAdd(
-      ba, 1, NULL, "--python-use-system-env", CB(arg_handle_python_use_system_env_set), NULL);
+  /* Pass: Disabling Things & Forcing Settings. */
+  BLI_argsPassSet(ba, ARG_PASS_SETTINGS_FORCE);
+  BLI_argsAddCase(ba, "-noaudio", 1, NULL, 0, CB(arg_handle_audio_disable), NULL);
+  BLI_argsAddCase(ba, "-setaudio", 1, NULL, 0, CB(arg_handle_audio_set), NULL);
 
-  /* second pass: custom window stuff */
-  BLI_argsAdd(ba, 2, "-p", "--window-geometry", CB(arg_handle_window_geometry), NULL);
-  BLI_argsAdd(ba, 2, "-w", "--window-border", CB(arg_handle_with_borders), NULL);
-  BLI_argsAdd(ba, 2, "-W", "--window-fullscreen", CB(arg_handle_without_borders), NULL);
-  BLI_argsAdd(ba, 2, "-M", "--window-maximized", CB(arg_handle_window_maximized), NULL);
-  BLI_argsAdd(ba, 2, NULL, "--no-window-focus", CB(arg_handle_no_window_focus), NULL);
-  BLI_argsAdd(ba, 2, "-con", "--start-console", CB(arg_handle_start_with_console), NULL);
-  BLI_argsAdd(ba, 2, "-R", NULL, CB(arg_handle_register_extension), NULL);
-  BLI_argsAdd(ba, 2, "-r", NULL, CB_EX(arg_handle_register_extension, silent), ba);
-  BLI_argsAdd(ba, 2, NULL, "--no-native-pixels", CB(arg_handle_native_pixels_set), ba);
+  /* Pass: Processing Arguments. */
+  BLI_argsPassSet(ba, ARG_PASS_FINAL);
+  BLI_argsAdd(ba, "-f", "--render-frame", CB(arg_handle_render_frame), C);
+  BLI_argsAdd(ba, "-a", "--render-anim", CB(arg_handle_render_animation), C);
+  BLI_argsAdd(ba, "-S", "--scene", CB(arg_handle_scene_set), C);
+  BLI_argsAdd(ba, "-s", "--frame-start", CB(arg_handle_frame_start_set), C);
+  BLI_argsAdd(ba, "-e", "--frame-end", CB(arg_handle_frame_end_set), C);
+  BLI_argsAdd(ba, "-j", "--frame-jump", CB(arg_handle_frame_skip_set), C);
+  BLI_argsAdd(ba, "-P", "--python", CB(arg_handle_python_file_run), C);
+  BLI_argsAdd(ba, NULL, "--python-text", CB(arg_handle_python_text_run), C);
+  BLI_argsAdd(ba, NULL, "--python-expr", CB(arg_handle_python_expr_run), C);
+  BLI_argsAdd(ba, NULL, "--python-console", CB(arg_handle_python_console_run), C);
+  BLI_argsAdd(ba, NULL, "--python-exit-code", CB(arg_handle_python_exit_code_set), NULL);
+  BLI_argsAdd(ba, NULL, "--addons", CB(arg_handle_addons_set), C);
 
-  /* third pass: disabling things and forcing settings */
-  BLI_argsAddCase(ba, 3, "-noaudio", 1, NULL, 0, CB(arg_handle_audio_disable), NULL);
-  BLI_argsAddCase(ba, 3, "-setaudio", 1, NULL, 0, CB(arg_handle_audio_set), NULL);
+  BLI_argsAdd(ba, "-o", "--render-output", CB(arg_handle_output_set), C);
+  BLI_argsAdd(ba, "-E", "--engine", CB(arg_handle_engine_set), C);
 
-  /* fourth pass: processing arguments */
-  BLI_argsAdd(ba, 4, "-f", "--render-frame", CB(arg_handle_render_frame), C);
-  BLI_argsAdd(ba, 4, "-a", "--render-anim", CB(arg_handle_render_animation), C);
-  BLI_argsAdd(ba, 4, "-S", "--scene", CB(arg_handle_scene_set), C);
-  BLI_argsAdd(ba, 4, "-s", "--frame-start", CB(arg_handle_frame_start_set), C);
-  BLI_argsAdd(ba, 4, "-e", "--frame-end", CB(arg_handle_frame_end_set), C);
-  BLI_argsAdd(ba, 4, "-j", "--frame-jump", CB(arg_handle_frame_skip_set), C);
-  BLI_argsAdd(ba, 4, "-P", "--python", CB(arg_handle_python_file_run), C);
-  BLI_argsAdd(ba, 4, NULL, "--python-text", CB(arg_handle_python_text_run), C);
-  BLI_argsAdd(ba, 4, NULL, "--python-expr", CB(arg_handle_python_expr_run), C);
-  BLI_argsAdd(ba, 4, NULL, "--python-console", CB(arg_handle_python_console_run), C);
-  BLI_argsAdd(ba, 4, NULL, "--python-exit-code", CB(arg_handle_python_exit_code_set), NULL);
-  BLI_argsAdd(ba, 4, NULL, "--addons", CB(arg_handle_addons_set), C);
-
-  BLI_argsAdd(ba, 4, "-o", "--render-output", CB(arg_handle_output_set), C);
-  BLI_argsAdd(ba, 4, "-E", "--engine", CB(arg_handle_engine_set), C);
-
-  BLI_argsAdd(ba, 4, "-F", "--render-format", CB(arg_handle_image_type_set), C);
-  BLI_argsAdd(ba, 1, "-t", "--threads", CB(arg_handle_threads_set), NULL);
-  BLI_argsAdd(ba, 4, "-x", "--use-extension", CB(arg_handle_extension_set), C);
+  BLI_argsAdd(ba, "-F", "--render-format", CB(arg_handle_image_type_set), C);
+  BLI_argsAdd(ba, "-x", "--use-extension", CB(arg_handle_extension_set), C);
 
 #  undef CB
 #  undef CB_EX
@@ -2248,7 +2288,7 @@ void main_args_setup(bContext *C, bArgs *ba)
  */
 void main_args_setup_post(bContext *C, bArgs *ba)
 {
-  BLI_argsParse(ba, 4, arg_handle_load_file, C);
+  BLI_argsParse(ba, ARG_PASS_FINAL, arg_handle_load_file, C);
 }
 
 /** \} */

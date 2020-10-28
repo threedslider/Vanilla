@@ -38,9 +38,6 @@ set(INC
   ${CMAKE_CURRENT_BINARY_DIR}/../../makesdna/intern
 )
 
-set(INC_SYS
-  ${GLEW_INCLUDE_PATH}
-)
 
 set(SRC
   drawobject.c
@@ -64,6 +61,7 @@ set(SRC
   view3d_header.c
   view3d_iterators.c
   view3d_ops.c
+  view3d_placement.c
   view3d_project.c
   view3d_select.c
   view3d_snap.c
@@ -84,7 +82,6 @@ if(WITH_PYTHON)
   add_definitions(-DWITH_PYTHON)
 endif()
 
-add_definitions(${GL_DEFINITIONS})
 
 if(WITH_INTERNATIONAL)
   add_definitions(-DWITH_INTERNATIONAL)
@@ -92,6 +89,10 @@ endif()
 
 if(WITH_FREESTYLE)
   add_definitions(-DWITH_FREESTYLE)
+endif()
+
+if(WITH_XR_OPENXR)
+  add_definitions(-DWITH_XR_OPENXR)
 endif()
 
 blender_add_lib(bf_editor_space_view3d "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")

@@ -21,16 +21,18 @@
  * \ingroup render
  */
 
-#ifndef __RE_MULTIRES_BAKE_H__
-#define __RE_MULTIRES_BAKE_H__
+#pragma once
 
 struct MultiresBakeRender;
 struct Scene;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct MultiresBakeRender {
   Scene *scene;
   DerivedMesh *lores_dm, *hires_dm;
-  bool simple;
   int bake_filter; /* Bake-filter, aka margin */
   int lvl, tot_lvl;
   short mode;
@@ -63,4 +65,6 @@ typedef struct MultiresBakeRender {
 
 void RE_multires_bake_images(struct MultiresBakeRender *bkr);
 
+#ifdef __cplusplus
+}
 #endif

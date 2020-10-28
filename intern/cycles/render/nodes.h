@@ -17,9 +17,9 @@
 #ifndef __NODES_H__
 #define __NODES_H__
 
+#include "graph/node.h"
 #include "render/graph.h"
 #include "render/image.h"
-#include "graph/node.h"
 
 #include "util/util_array.h"
 #include "util/util_string.h"
@@ -78,18 +78,21 @@ class ImageSlotTextureNode : public TextureNode {
   explicit ImageSlotTextureNode(const NodeType *node_type) : TextureNode(node_type)
   {
     special_type = SHADER_SPECIAL_TYPE_IMAGE_SLOT;
-    image_manager = NULL;
   }
-  ~ImageSlotTextureNode();
-  void add_image_user() const;
-  ImageManager *image_manager;
-  vector<int> slots;
+
+  virtual bool equals(const ShaderNode &other)
+  {
+    const ImageSlotTextureNode &other_node = (const ImageSlotTextureNode &)other;
+    return TextureNode::equals(other) && handle == other_node.handle;
+  }
+
+  ImageHandle handle;
 };
 
 class ImageTextureNode : public ImageSlotTextureNode {
  public:
   SHADER_NODE_NO_CLONE_CLASS(ImageTextureNode)
-  ShaderNode *clone() const;
+  ShaderNode *clone(ShaderGraph *graph) const;
   void attributes(Shader *shader, AttributeRequestSet *attributes);
   bool has_attribute_dependency()
   {
@@ -98,16 +101,14 @@ class ImageTextureNode : public ImageSlotTextureNode {
 
   virtual bool equals(const ShaderNode &other)
   {
-    const ImageTextureNode &image_node = (const ImageTextureNode &)other;
-    return ImageSlotTextureNode::equals(other) && builtin_data == image_node.builtin_data &&
-           animated == image_node.animated;
+    const ImageTextureNode &other_node = (const ImageTextureNode &)other;
+    return ImageSlotTextureNode::equals(other) && animated == other_node.animated;
   }
 
-  ImageKey image_key(const int tile = 0) const;
+  ImageParams image_params() const;
 
   /* Parameters. */
   ustring filename;
-  void *builtin_data;
   ustring colorspace;
   ImageAlphaType alpha_type;
   NodeImageProjection projection;
@@ -118,11 +119,6 @@ class ImageTextureNode : public ImageSlotTextureNode {
   float3 vector;
   ccl::vector<int> tiles;
 
-  /* Runtime. */
-  bool is_float;
-  bool compress_as_srgb;
-  ustring known_colorspace;
-
  protected:
   void cull_tiles(Scene *scene, ShaderGraph *graph);
 };
@@ -130,7 +126,7 @@ class ImageTextureNode : public ImageSlotTextureNode {
 class EnvironmentTextureNode : public ImageSlotTextureNode {
  public:
   SHADER_NODE_NO_CLONE_CLASS(EnvironmentTextureNode)
-  ShaderNode *clone() const;
+  ShaderNode *clone(ShaderGraph *graph) const;
   void attributes(Shader *shader, AttributeRequestSet *attributes);
   bool has_attribute_dependency()
   {
@@ -143,27 +139,20 @@ class EnvironmentTextureNode : public ImageSlotTextureNode {
 
   virtual bool equals(const ShaderNode &other)
   {
-    const EnvironmentTextureNode &env_node = (const EnvironmentTextureNode &)other;
-    return ImageSlotTextureNode::equals(other) && builtin_data == env_node.builtin_data &&
-           animated == env_node.animated;
+    const EnvironmentTextureNode &other_node = (const EnvironmentTextureNode &)other;
+    return ImageSlotTextureNode::equals(other) && animated == other_node.animated;
   }
 
-  ImageKey image_key() const;
+  ImageParams image_params() const;
 
   /* Parameters. */
   ustring filename;
-  void *builtin_data;
   ustring colorspace;
   ImageAlphaType alpha_type;
   NodeEnvironmentProjection projection;
   InterpolationType interpolation;
   bool animated;
   float3 vector;
-
-  /* Runtime. */
-  bool is_float;
-  bool compress_as_srgb;
-  ustring known_colorspace;
 };
 
 class SkyTextureNode : public TextureNode {
@@ -179,7 +168,23 @@ class SkyTextureNode : public TextureNode {
   float3 sun_direction;
   float turbidity;
   float ground_albedo;
+  bool sun_disc;
+  float sun_size;
+  float sun_intensity;
+  float sun_elevation;
+  float sun_rotation;
+  float altitude;
+  float air_density;
+  float dust_density;
+  float ozone_density;
   float3 vector;
+  ImageHandle handle;
+
+  float get_sun_size()
+  {
+    /* Clamping for numerical precision. */
+    return fmaxf(sun_size, 0.0005f);
+  }
 };
 
 class OutputNode : public ShaderNode {
@@ -207,6 +212,11 @@ class OutputAOVNode : public ShaderNode {
   float3 color;
 
   ustring name;
+
+  virtual int get_group()
+  {
+    return NODE_GROUP_LEVEL_4;
+  }
 
   /* Don't allow output node de-duplication. */
   virtual bool equals(const ShaderNode & /*other*/)
@@ -236,7 +246,7 @@ class NoiseTextureNode : public TextureNode {
   SHADER_NODE_CLASS(NoiseTextureNode)
 
   int dimensions;
-  float w, scale, detail, distortion;
+  float w, scale, detail, roughness, distortion;
   float3 vector;
 };
 
@@ -297,7 +307,7 @@ class WaveTextureNode : public TextureNode {
   NodeWaveRingsDirection rings_direction;
   NodeWaveProfile profile;
 
-  float scale, distortion, detail, detail_scale, phase;
+  float scale, distortion, detail, detail_scale, detail_roughness, phase;
   float3 vector;
 };
 
@@ -350,11 +360,11 @@ class PointDensityTextureNode : public ShaderNode {
   SHADER_NODE_NO_CLONE_CLASS(PointDensityTextureNode)
   virtual int get_group()
   {
-    return NODE_GROUP_LEVEL_3;
+    return NODE_GROUP_LEVEL_4;
   }
 
   ~PointDensityTextureNode();
-  ShaderNode *clone() const;
+  ShaderNode *clone(ShaderGraph *graph) const;
   void attributes(Shader *shader, AttributeRequestSet *attributes);
   bool has_attribute_dependency()
   {
@@ -365,14 +375,6 @@ class PointDensityTextureNode : public ShaderNode {
   {
     return true;
   }
-  bool has_object_dependency()
-  {
-    return true;
-  }
-
-  void add_image();
-
-  ImageKey image_key() const;
 
   /* Parameters. */
   ustring filename;
@@ -380,16 +382,16 @@ class PointDensityTextureNode : public ShaderNode {
   InterpolationType interpolation;
   Transform tfm;
   float3 vector;
-  void *builtin_data;
 
   /* Runtime. */
-  ImageManager *image_manager;
-  int slot;
+  ImageHandle handle;
+
+  ImageParams image_params() const;
 
   virtual bool equals(const ShaderNode &other)
   {
-    const PointDensityTextureNode &point_dendity_node = (const PointDensityTextureNode &)other;
-    return ShaderNode::equals(other) && builtin_data == point_dendity_node.builtin_data;
+    const PointDensityTextureNode &other_node = (const PointDensityTextureNode &)other;
+    return ShaderNode::equals(other) && handle == other_node.handle;
   }
 };
 
@@ -398,7 +400,7 @@ class IESLightNode : public TextureNode {
   SHADER_NODE_NO_CLONE_CLASS(IESLightNode)
 
   ~IESLightNode();
-  ShaderNode *clone() const;
+  ShaderNode *clone(ShaderGraph *graph) const;
   virtual int get_group()
   {
     return NODE_GROUP_LEVEL_2;
@@ -578,6 +580,7 @@ class PrincipledBsdfNode : public BsdfBaseNode {
   ClosureType distribution, distribution_orig;
   ClosureType subsurface_method;
   float3 emission;
+  float emission_strength;
   float alpha;
 
   bool has_integrator_dependency();
@@ -905,10 +908,6 @@ class TextureCoordinateNode : public ShaderNode {
   bool has_spatial_varying()
   {
     return true;
-  }
-  bool has_object_dependency()
-  {
-    return use_transform;
   }
 
   float3 normal_osl;
@@ -1400,6 +1399,7 @@ class VectorRotateNode : public ShaderNode {
     return NODE_GROUP_LEVEL_3;
   }
   NodeVectorRotateType type;
+  bool invert;
   float3 vector;
   float3 center;
   float3 axis;
@@ -1502,10 +1502,10 @@ class SetNormalNode : public ShaderNode {
 
 class OSLNode : public ShaderNode {
  public:
-  static OSLNode *create(size_t num_inputs, const OSLNode *from = NULL);
+  static OSLNode *create(ShaderGraph *graph, size_t num_inputs, const OSLNode *from = NULL);
   ~OSLNode();
 
-  ShaderNode *clone() const;
+  ShaderNode *clone(ShaderGraph *graph) const;
 
   char *input_default_value();
   void add_input(ustring name, SocketType::Type type);

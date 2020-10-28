@@ -13,6 +13,7 @@ out vec4 fragColor;
 #define BG_GRADIENT 1
 #define BG_CHECKER 2
 #define BG_RADIAL 3
+#define BG_SOLID_CHECKER 4
 #define SQRT2 1.4142135623730950488
 
 /* 4x4 bayer matrix prepared for 8bit UNORM precision error. */
@@ -43,7 +44,11 @@ void main()
   vec3 col_high;
   vec3 col_low;
 
-  switch (bgType) {
+  /* BG_SOLID_CHECKER selects BG_SOLID when no pixel has been drawn otherwise use the BG_CHERKER.
+   */
+  int bg_type = bgType == BG_SOLID_CHECKER ? (depth == 1.0 ? BG_SOLID : BG_CHECKER) : bgType;
+
+  switch (bg_type) {
     case BG_SOLID:
       bg_col = colorBackground.rgb;
       break;
@@ -71,10 +76,10 @@ void main()
       bg_col += dither();
       break;
     case BG_CHECKER:
-      float size = 8.0 * sizePixel;
+      float size = sizeChecker * sizePixel;
       ivec2 p = ivec2(floor(gl_FragCoord.xy / size));
       bool check = mod(p.x, 2) == mod(p.y, 2);
-      bg_col = (check) ? colorCheckerLow.rgb : colorCheckerHigh.rgb;
+      bg_col = (check) ? colorCheckerPrimary.rgb : colorCheckerSecondary.rgb;
       break;
   }
 

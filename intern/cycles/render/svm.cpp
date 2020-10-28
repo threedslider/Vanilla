@@ -23,10 +23,11 @@
 #include "render/nodes.h"
 #include "render/scene.h"
 #include "render/shader.h"
+#include "render/stats.h"
 #include "render/svm.h"
 
-#include "util/util_logging.h"
 #include "util/util_foreach.h"
+#include "util/util_logging.h"
 #include "util/util_progress.h"
 #include "util/util_task.h"
 
@@ -76,6 +77,12 @@ void SVMShaderManager::device_update(Device *device,
   if (!need_update)
     return;
 
+  scoped_callback_timer timer([scene](double time) {
+    if (scene->update_stats) {
+      scene->update_stats->svm.times.add_entry({"device_update", time});
+    }
+  });
+
   const int num_shaders = scene->shaders.size();
 
   VLOG(1) << "Total " << num_shaders << " shaders.";
@@ -84,9 +91,6 @@ void SVMShaderManager::device_update(Device *device,
 
   /* test if we need to update */
   device_free(device, dscene, scene);
-
-  /* determine which shaders are in use */
-  device_update_shaders_used(scene);
 
   /* Build all shaders. */
   TaskPool task_pool;
@@ -97,8 +101,7 @@ void SVMShaderManager::device_update(Device *device,
                                  scene,
                                  scene->shaders[i],
                                  &progress,
-                                 &shader_svm_nodes[i]),
-                   false);
+                                 &shader_svm_nodes[i]));
   }
   task_pool.wait_work();
 
@@ -447,14 +450,8 @@ void SVMCompiler::generate_node(ShaderNode *node, ShaderNodeSet &done)
   else if (current_type == SHADER_TYPE_VOLUME) {
     if (node->has_spatial_varying())
       current_shader->has_volume_spatial_varying = true;
-  }
-
-  if (node->has_object_dependency()) {
-    current_shader->has_object_dependency = true;
-  }
-
-  if (node->has_attribute_dependency()) {
-    current_shader->has_attribute_dependency = true;
+    if (node->has_attribute_dependency())
+      current_shader->has_volume_attribute_dependency = true;
   }
 
   if (node->has_integrator_dependency()) {
@@ -867,8 +864,7 @@ void SVMCompiler::compile(Shader *shader, array<int4> &svm_nodes, int index, Sum
   shader->has_displacement = false;
   shader->has_surface_spatial_varying = false;
   shader->has_volume_spatial_varying = false;
-  shader->has_object_dependency = false;
-  shader->has_attribute_dependency = false;
+  shader->has_volume_attribute_dependency = false;
   shader->has_integrator_dependency = false;
 
   /* generate bump shader */

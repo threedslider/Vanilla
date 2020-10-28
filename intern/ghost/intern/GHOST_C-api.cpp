@@ -24,13 +24,18 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 
-#include "intern/GHOST_Debug.h"
 #include "GHOST_C-api.h"
-#include "GHOST_ISystem.h"
 #include "GHOST_IEvent.h"
 #include "GHOST_IEventConsumer.h"
+#include "GHOST_ISystem.h"
+#include "intern/GHOST_Debug.h"
+#ifdef WITH_XR_OPENXR
+#  include "GHOST_IXrContext.h"
+#endif
 #include "intern/GHOST_CallbackEventConsumer.h"
+#include "intern/GHOST_XrException.h"
 
 GHOST_SystemHandle GHOST_CreateSystem(void)
 {
@@ -130,11 +135,12 @@ void GHOST_GetAllDisplayDimensions(GHOST_SystemHandle systemhandle,
   system->getAllDisplayDimensions(*width, *height);
 }
 
-GHOST_ContextHandle GHOST_CreateOpenGLContext(GHOST_SystemHandle systemhandle)
+GHOST_ContextHandle GHOST_CreateOpenGLContext(GHOST_SystemHandle systemhandle,
+                                              GHOST_GLSettings glSettings)
 {
   GHOST_ISystem *system = (GHOST_ISystem *)systemhandle;
 
-  return (GHOST_ContextHandle)system->createOffscreenContext();
+  return (GHOST_ContextHandle)system->createOffscreenContext(glSettings);
 }
 
 GHOST_TSuccess GHOST_DisposeOpenGLContext(GHOST_SystemHandle systemhandle,
@@ -523,17 +529,15 @@ void GHOST_SetTitle(GHOST_WindowHandle windowhandle, const char *title)
 char *GHOST_GetTitle(GHOST_WindowHandle windowhandle)
 {
   GHOST_IWindow *window = (GHOST_IWindow *)windowhandle;
-  STR_String title;
+  std::string title = window->getTitle();
 
-  window->getTitle(title);
-
-  char *ctitle = (char *)malloc(title.Length() + 1);
+  char *ctitle = (char *)malloc(title.size() + 1);
 
   if (ctitle == NULL) {
     return NULL;
   }
 
-  strcpy(ctitle, title.Ptr());
+  strcpy(ctitle, title.c_str());
 
   return ctitle;
 }
@@ -674,7 +678,7 @@ GHOST_TSuccess GHOST_ActivateOpenGLContext(GHOST_ContextHandle contexthandle)
     return context->activateDrawingContext();
   }
   else {
-    GHOST_PRINT("GHOST_ActivateOpenGLContext: Context not valid");
+    GHOST_PRINTF("%s: Context not valid\n", __func__);
     return GHOST_kFailure;
   }
 }
@@ -684,6 +688,13 @@ GHOST_TSuccess GHOST_ReleaseOpenGLContext(GHOST_ContextHandle contexthandle)
   GHOST_IContext *context = (GHOST_IContext *)contexthandle;
 
   return context->releaseDrawingContext();
+}
+
+unsigned int GHOST_GetContextDefaultOpenGLFramebuffer(GHOST_ContextHandle contexthandle)
+{
+  GHOST_IContext *context = (GHOST_IContext *)contexthandle;
+
+  return context->getDefaultFramebuffer();
 }
 
 unsigned int GHOST_GetDefaultOpenGLFramebuffer(GHOST_WindowHandle windowhandle)
@@ -704,11 +715,6 @@ void GHOST_SetTabletAPI(GHOST_SystemHandle systemhandle, GHOST_TTabletAPI api)
 {
   GHOST_ISystem *system = (GHOST_ISystem *)systemhandle;
   system->setTabletAPI(api);
-}
-
-const GHOST_TabletData *GHOST_GetTabletData(GHOST_WindowHandle windowhandle)
-{
-  return &((GHOST_IWindow *)windowhandle)->GetTabletData();
 }
 
 GHOST_TInt32 GHOST_GetWidthRectangle(GHOST_RectangleHandle rectanglehandle)
@@ -895,3 +901,71 @@ void GHOST_EndIME(GHOST_WindowHandle windowhandle)
 }
 
 #endif /* WITH_INPUT_IME */
+
+#ifdef WITH_XR_OPENXR
+
+#  define GHOST_XR_CAPI_CALL(call, ctx) \
+    try { \
+      call; \
+    } \
+    catch (GHOST_XrException & e) { \
+      (ctx)->dispatchErrorMessage(&e); \
+    }
+
+#  define GHOST_XR_CAPI_CALL_RET(call, ctx) \
+    try { \
+      return call; \
+    } \
+    catch (GHOST_XrException & e) { \
+      (ctx)->dispatchErrorMessage(&e); \
+    }
+
+void GHOST_XrSessionStart(GHOST_XrContextHandle xr_contexthandle,
+                          const GHOST_XrSessionBeginInfo *begin_info)
+{
+  GHOST_IXrContext *xr_context = (GHOST_IXrContext *)xr_contexthandle;
+  GHOST_XR_CAPI_CALL(xr_context->startSession(begin_info), xr_context);
+}
+
+void GHOST_XrSessionEnd(GHOST_XrContextHandle xr_contexthandle)
+{
+  GHOST_IXrContext *xr_context = (GHOST_IXrContext *)xr_contexthandle;
+  GHOST_XR_CAPI_CALL(xr_context->endSession(), xr_context);
+}
+
+void GHOST_XrSessionDrawViews(GHOST_XrContextHandle xr_contexthandle, void *draw_customdata)
+{
+  GHOST_IXrContext *xr_context = (GHOST_IXrContext *)xr_contexthandle;
+  GHOST_XR_CAPI_CALL(xr_context->drawSessionViews(draw_customdata), xr_context);
+}
+
+int GHOST_XrSessionIsRunning(const GHOST_XrContextHandle xr_contexthandle)
+{
+  const GHOST_IXrContext *xr_context = (const GHOST_IXrContext *)xr_contexthandle;
+  GHOST_XR_CAPI_CALL_RET(xr_context->isSessionRunning(), xr_context);
+  return 0; /* Only reached if exception is thrown. */
+}
+
+void GHOST_XrGraphicsContextBindFuncs(GHOST_XrContextHandle xr_contexthandle,
+                                      GHOST_XrGraphicsContextBindFn bind_fn,
+                                      GHOST_XrGraphicsContextUnbindFn unbind_fn)
+{
+  GHOST_IXrContext *xr_context = (GHOST_IXrContext *)xr_contexthandle;
+  GHOST_XR_CAPI_CALL(xr_context->setGraphicsContextBindFuncs(bind_fn, unbind_fn), xr_context);
+}
+
+void GHOST_XrDrawViewFunc(GHOST_XrContextHandle xr_contexthandle, GHOST_XrDrawViewFn draw_view_fn)
+{
+  GHOST_IXrContext *xr_context = (GHOST_IXrContext *)xr_contexthandle;
+  GHOST_XR_CAPI_CALL(xr_context->setDrawViewFunc(draw_view_fn), xr_context);
+}
+
+int GHOST_XrSessionNeedsUpsideDownDrawing(const GHOST_XrContextHandle xr_contexthandle)
+{
+  GHOST_IXrContext *xr_context = (GHOST_IXrContext *)xr_contexthandle;
+
+  GHOST_XR_CAPI_CALL_RET(xr_context->needsUpsideDownDrawing(), xr_context);
+  return 0; /* Only reached if exception is thrown. */
+}
+
+#endif

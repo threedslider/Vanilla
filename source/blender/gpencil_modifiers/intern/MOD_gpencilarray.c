@@ -86,7 +86,7 @@ static void initData(GpencilModifierData *md)
   MEMCPY_STRUCT_AFTER(gpmd, DNA_struct_default_get(ArrayGpencilModifierData), modifier);
 
   /* Open the first subpanel too, because it's activated by default. */
-  md->ui_expand_flag = (1 << 0) | (1 << 1);
+  md->ui_expand_flag = UI_PANEL_DATA_EXPAND_ROOT | UI_SUBPANEL_DATA_EXPAND_1;
 }
 
 static void copyData(const GpencilModifierData *md, GpencilModifierData *target)
@@ -255,7 +255,7 @@ static void generate_geometry(GpencilModifierData *md,
       /* Duplicate original strokes to create this instance. */
       LISTBASE_FOREACH_BACKWARD (tmpStrokes *, iter, &stroke_cache) {
         /* Duplicate stroke */
-        bGPDstroke *gps_dst = BKE_gpencil_stroke_duplicate(iter->gps, true);
+        bGPDstroke *gps_dst = BKE_gpencil_stroke_duplicate(iter->gps, true, true);
 
         /* Move points */
         for (int i = 0; i < iter->gps->totpoints; i++) {

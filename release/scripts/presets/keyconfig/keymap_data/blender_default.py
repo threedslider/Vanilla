@@ -3226,6 +3226,9 @@ def km_grease_pencil_stroke_edit_mode(params):
          {"properties": [("mode", 'GPENCIL_OPACITY')]}),
         # Proportional editing.
         *_template_items_proportional_editing(connected=True),
+        # Curve edit mode toggle.
+        ("wm.context_toggle", {"type": 'U', "value": 'PRESS'},
+         {"properties": [("data_path", 'gpencil_data.use_curve_edit')]}),
         # Add menu
         ("object.gpencil_add", {"type": 'A', "value": 'PRESS', "shift": True}, None),
         # Vertex group menu
@@ -3253,6 +3256,20 @@ def km_grease_pencil_stroke_edit_mode(params):
 
     return keymap
 
+def km_grease_pencil_stroke_curve_edit_mode(params):
+    items = []
+    keymap = (
+        "Grease Pencil Stroke Curve Edit Mode",
+        {"space_type": 'EMPTY', "region_type": 'WINDOW'},
+        {"items": items},
+    )
+
+    items.extend([
+        # Set handle type
+        ("gpencil.stroke_editcurve_set_handle_type", {"type": 'V', "value": 'PRESS'}, None),
+    ])
+
+    return keymap
 
 def km_grease_pencil_stroke_paint_mode(params):
     items = []
@@ -4400,7 +4417,7 @@ def km_sculpt(params):
          {"properties": [("use_normals", True), ("keep_previous_mask", True), ("invert", False), ("smooth_iterations", 0), ("create_face_set", False)]}),
         # Dynamic topology
         ("sculpt.dynamic_topology_toggle", {"type": 'D', "value": 'PRESS', "ctrl": True}, None),
-        ("sculpt.set_detail_size", {"type": 'D', "value": 'PRESS', "shift": True}, None),
+        ("sculpt.dyntopo_detail_size_edit", {"type": 'D', "value": 'PRESS', "shift": True}, None),
         # Remesh
         ("object.voxel_remesh", {"type": 'R', "value": 'PRESS', "ctrl": True}, None),
         ("object.voxel_size_edit", {"type": 'R', "value": 'PRESS', "shift": True}, None),
@@ -4456,6 +4473,7 @@ def km_sculpt(params):
          {"properties": [("data_path", 'tool_settings.sculpt.brush.use_smooth_stroke')]}),
         op_menu("VIEW3D_MT_angle_control", {"type": 'R', "value": 'PRESS'}),
         op_menu_pie("VIEW3D_MT_sculpt_mask_edit_pie", {"type": 'A', "value": 'PRESS'}),
+        op_menu_pie("VIEW3D_MT_sculpt_automasking_pie", {"type": 'A', "alt": True,"value": 'PRESS'}),
         op_menu_pie("VIEW3D_MT_sculpt_face_sets_edit_pie", {"type": 'W', "value": 'PRESS'}),
         *_template_items_context_panel("VIEW3D_PT_sculpt_context_menu", params.context_menu_event),
     ])
@@ -5020,7 +5038,7 @@ def km_transform_modal_map(_params):
         ("AUTOIK_CHAIN_LEN_DOWN", {"type": 'WHEELUPMOUSE', "value": 'PRESS', "shift": True}, None),
         ("INSERTOFS_TOGGLE_DIR", {"type": 'T', "value": 'PRESS'}, None),
         ("AUTOCONSTRAIN", {"type": 'MIDDLEMOUSE', "value": 'PRESS'}, None),
-        ("AUTOCONSTRAINPLANE", {"type": 'MIDDLEMOUSE', "value": 'PRESS'}, None),
+        ("AUTOCONSTRAINPLANE", {"type": 'MIDDLEMOUSE', "value": 'PRESS', "shift": True}, None),
     ])
 
     return keymap
@@ -6889,6 +6907,7 @@ def generate_keymaps(params=None):
 
         # Modes.
         km_grease_pencil(params),
+        km_grease_pencil_stroke_curve_edit_mode(params),
         km_grease_pencil_stroke_edit_mode(params),
         km_grease_pencil_stroke_paint_mode(params),
         km_grease_pencil_stroke_paint_draw_brush(params),

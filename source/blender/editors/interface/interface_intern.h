@@ -62,9 +62,9 @@ struct wmTimer;
 #define UI_MENU_SUBMENU_PADDING (6 * UI_DPI_FAC)
 
 /* menu scrolling */
-#define UI_MENU_SCROLL_ARROW 12
-#define UI_MENU_SCROLL_MOUSE (UI_MENU_SCROLL_ARROW + 2)
-#define UI_MENU_SCROLL_PAD 4
+#define UI_MENU_SCROLL_ARROW (12 * UI_DPI_FAC)
+#define UI_MENU_SCROLL_MOUSE (UI_MENU_SCROLL_ARROW + 2 * UI_DPI_FAC)
+#define UI_MENU_SCROLL_PAD (4 * UI_DPI_FAC)
 
 /* panel limits */
 #define UI_PANEL_MINX 100
@@ -943,7 +943,7 @@ typedef struct uiWidgetBaseParameters {
   /* We pack alpha check and discard factor in alpha_discard.
    * If the value is negative then we do alpha check.
    * The absolute value itself is the discard factor.
-   * Initialize value to 1.0.f if you don't want discard */
+   * Initialize value to 1.0f if you don't want discard. */
   float alpha_discard;
   float tria_type;
   float _pad[3];
@@ -1088,6 +1088,9 @@ uiBut *ui_but_find_rect_over(const struct ARegion *region,
 uiBut *ui_list_find_mouse_over_ex(struct ARegion *region, int x, int y) ATTR_WARN_UNUSED_RESULT;
 
 bool ui_but_contains_password(const uiBut *but) ATTR_WARN_UNUSED_RESULT;
+
+size_t ui_but_drawstr_len_without_sep_char(const uiBut *but);
+size_t ui_but_tip_len_only_first_line(const uiBut *but);
 
 uiBut *ui_but_prev(uiBut *but) ATTR_WARN_UNUSED_RESULT;
 uiBut *ui_but_next(uiBut *but) ATTR_WARN_UNUSED_RESULT;

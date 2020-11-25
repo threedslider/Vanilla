@@ -64,6 +64,7 @@
 
 #include "UI_interface.h"
 #include "UI_interface_icons.h"
+#include "UI_view2d.h"
 
 #include "IMB_imbuf.h"
 
@@ -286,11 +287,12 @@ static void ui_update_flexible_spacing(const ARegion *region, uiBlock *block)
     }
   }
 
+  const float view_scale_x = UI_view2d_scale_get_x(&region->v2d);
   const float segment_width = region_width / (float)sepr_flex_len;
   float offset = 0, remaining_space = region_width - buttons_width;
   i = 0;
   LISTBASE_FOREACH (uiBut *, but, &block->buttons) {
-    BLI_rctf_translate(&but->rect, offset, 0);
+    BLI_rctf_translate(&but->rect, offset / view_scale_x, 0);
     if (but->type == UI_BTYPE_SEPR_SPACER) {
       /* How much the next block overlap with the current segment */
       int overlap = ((i == sepr_flex_len - 1) ? buttons_width - spacers_pos[i] :
@@ -463,7 +465,7 @@ void ui_block_bounds_calc(uiBlock *block)
 
   /* hardcoded exception... but that one is annoying with larger safety */
   uiBut *bt = block->buttons.first;
-  int xof = (bt && STREQLEN(bt->str, "ERROR", 5)) ? 10 : 40;
+  int xof = ((bt && STRPREFIX(bt->str, "ERROR")) ? 10 : 40) * U.dpi_fac;
 
   block->safety.xmin = block->rect.xmin - xof;
   block->safety.ymin = block->rect.ymin - xof;
@@ -702,10 +704,10 @@ static bool ui_but_equals_old(const uiBut *but, const uiBut *oldbut)
   if (but->funcN != oldbut->funcN) {
     return false;
   }
-  if (oldbut->func_arg1 != oldbut && but->func_arg1 != oldbut->func_arg1) {
+  if (!ELEM(oldbut->func_arg1, oldbut, but->func_arg1)) {
     return false;
   }
-  if (oldbut->func_arg2 != oldbut && but->func_arg2 != oldbut->func_arg2) {
+  if (!ELEM(oldbut->func_arg2, oldbut, but->func_arg2)) {
     return false;
   }
   if (!but->funcN && ((but->poin != oldbut->poin && (uiBut *)oldbut->poin != oldbut) ||
@@ -900,6 +902,8 @@ static bool ui_but_update_from_old_block(const bContext *C,
     /* Move button over from oldblock to new block. */
     BLI_remlink(&oldblock->buttons, oldbut);
     BLI_insertlinkafter(&block->buttons, but, oldbut);
+    /* Add the old button to the button groups in the new block. */
+    ui_button_group_replace_but_ptr(block, but, oldbut);
     oldbut->block = block;
     *but_p = oldbut;
 
@@ -928,9 +932,11 @@ static bool ui_but_update_from_old_block(const bContext *C,
   return found_active;
 }
 
-/* needed for temporarily rename buttons, such as in outliner or file-select,
- * they should keep calling uiDefButs to keep them alive */
-/* returns 0 when button removed */
+/**
+ * Needed for temporarily rename buttons, such as in outliner or file-select,
+ * they should keep calling #uiDefBut to keep them alive.
+ * \return false when button removed.
+ */
 bool UI_but_active_only_ex(
     const bContext *C, ARegion *region, uiBlock *block, uiBut *but, const bool remove_on_failure)
 {
@@ -1993,7 +1999,7 @@ void UI_block_draw(const bContext *C, uiBlock *block)
   else if (block->panel) {
     bool show_background = region->alignment != RGN_ALIGN_FLOAT;
     if (show_background) {
-      if (block->panel->type && (block->panel->type->flag & PNL_NO_HEADER)) {
+      if (block->panel->type && (block->panel->type->flag & PANEL_TYPE_NO_HEADER)) {
         if (region->regiontype == RGN_TYPE_TOOLS) {
           /* We never want a background around active tools. */
           show_background = false;
@@ -4065,6 +4071,11 @@ static uiBut *ui_def_but(uiBlock *block,
   }
 #endif
 
+  /* Always keep text in radio-buttons (expanded enums) center aligned. */
+  if (ELEM(but->type, UI_BTYPE_ROW)) {
+    but->drawflag &= ~UI_BUT_TEXT_LEFT;
+  }
+
   but->drawflag |= (block->flag & UI_BUT_ALIGN);
 
   if (block->lock == true) {
@@ -4252,8 +4263,8 @@ static void ui_def_but_rna__menu(bContext *UNUSED(C), uiLayout *layout, void *bu
                    0,
                    "");
         }
-        uiItemS(column);
       }
+      uiItemS(column);
     }
     else {
       if (item->icon) {

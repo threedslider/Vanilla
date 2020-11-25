@@ -1919,6 +1919,7 @@ static int animchannels_delete_exec(bContext *C, wmOperator *UNUSED(op))
 
   /* send notifier that things have changed */
   WM_event_add_notifier(C, NC_ANIMATION | ND_ANIMCHAN | NA_EDITED, NULL);
+  WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME | NA_REMOVED, NULL);
   DEG_relations_tag_update(CTX_data_main(C));
 
   return OPERATOR_FINISHED;
@@ -2682,11 +2683,7 @@ static int animchannels_box_select_exec(bContext *C, wmOperator *op)
   WM_operator_properties_border_to_rcti(op, &rect);
 
   if (!extend) {
-    printf("\n\n\n\033[92mBox-selecting channels without extend!\033[0m\n");
     ANIM_anim_channels_select_set(&ac, ACHANNEL_SETFLAG_CLEAR);
-  }
-  else {
-    printf("\n\n\n\033[91mBox-selecting channels WITH extend!\033[0m\n");
   }
 
   if (select) {

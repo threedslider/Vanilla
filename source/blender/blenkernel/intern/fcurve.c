@@ -841,11 +841,23 @@ bool BKE_fcurve_calc_range(
  */
 void BKE_fcurve_active_keyframe_set(FCurve *fcu, const BezTriple *active_bezt)
 {
+  if (active_bezt == NULL) {
+    fcu->active_keyframe_index = FCURVE_ACTIVE_KEYFRAME_NONE;
+    return;
+  }
+
+  /* Gracefully handle out-of-bounds pointers. Ideally this would do a BLI_assert() as well, but
+   * then the unit tests would break in debug mode. */
+  ptrdiff_t offset = active_bezt - fcu->bezt;
+  if (offset < 0 || offset >= fcu->totvert) {
+    fcu->active_keyframe_index = FCURVE_ACTIVE_KEYFRAME_NONE;
+    return;
+  }
+
   /* The active keyframe should always be selected. */
-  BLI_assert((active_bezt == NULL) ||
-             ((active_bezt->f1 | active_bezt->f2 | active_bezt->f3) & SELECT));
-  fcu->active_keyframe_index = (active_bezt == NULL) ? FCURVE_ACTIVE_KEYFRAME_NONE :
-                                                       active_bezt - fcu->bezt;
+  BLI_assert(BEZT_ISSEL_ANY(active_bezt) || !"active keyframe must be selected");
+
+  fcu->active_keyframe_index = (int)offset;
 }
 
 /**
@@ -871,6 +883,14 @@ int BKE_fcurve_active_keyframe_index(const FCurve *fcu)
 }
 
 /** \} */
+
+void BKE_fcurve_keyframe_move_value_with_handles(struct BezTriple *keyframe, const float new_value)
+{
+  const float value_delta = new_value - keyframe->vec[1][1];
+  keyframe->vec[0][1] += value_delta;
+  keyframe->vec[1][1] = new_value;
+  keyframe->vec[2][1] += value_delta;
+}
 
 /* -------------------------------------------------------------------- */
 /** \name Status Checks
@@ -1260,7 +1280,7 @@ void calchandles_fcurve_ex(FCurve *fcu, eBezTriple_Flag handle_sel_flag)
     /* For automatic ease in and out. */
     if (BEZT_IS_AUTOH(bezt) && !cycle) {
       /* Only do this on first or last beztriple. */
-      if ((a == 0) || (a == fcu->totvert - 1)) {
+      if (ELEM(a, 0, fcu->totvert - 1)) {
         /* Set both handles to have same horizontal value as keyframe. */
         if (fcu->extend == FCURVE_EXTRAPOLATE_CONSTANT) {
           bezt->vec[0][1] = bezt->vec[2][1] = bezt->vec[1][1];

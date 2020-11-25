@@ -429,6 +429,11 @@ bool outliner_item_is_co_over_name_icons(const TreeElement *te, float view_co_x)
   return outside_left && (view_co_x < te->xend);
 }
 
+bool outliner_item_is_co_over_icon(const TreeElement *te, float view_co_x)
+{
+  return (view_co_x > (te->xs + UI_UNIT_X)) && (view_co_x < (te->xs + UI_UNIT_X * 2));
+}
+
 /* Find if x coordinate is over element name. */
 bool outliner_item_is_co_over_name(const TreeElement *te, float view_co_x)
 {
@@ -442,9 +447,11 @@ bool outliner_item_is_co_within_close_toggle(const TreeElement *te, float view_c
 }
 
 /* Scroll view vertically while keeping within total bounds */
-void outliner_scroll_view(ARegion *region, int delta_y)
+void outliner_scroll_view(SpaceOutliner *space_outliner, ARegion *region, int delta_y)
 {
-  int y_min = MIN2(region->v2d.cur.ymin, region->v2d.tot.ymin);
+  int tree_width, tree_height;
+  outliner_tree_dimensions(space_outliner, &tree_width, &tree_height);
+  int y_min = MIN2(region->v2d.cur.ymin, -tree_height);
 
   region->v2d.cur.ymax += delta_y;
   region->v2d.cur.ymin += delta_y;

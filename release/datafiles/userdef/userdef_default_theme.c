@@ -663,6 +663,7 @@ const bTheme U_theme_default = {
     .gp_vertex_select = RGBA(0xff8500ff),
     .anim_preview_range = RGBA(0xa14d0066),
     .metadatatext = RGBA(0xffffffff),
+    .row_alternate = RGBA(0xffffff0d),
   },
   .space_image = {
     .back = RGBA(0x44444400),
@@ -1108,28 +1109,28 @@ const bTheme U_theme_default = {
   },
   .collection_color = {
     {
-      .color = RGBA(0xe4312bff),
+      .color = RGBA(0xe2605bff),
     },
     {
-      .color = RGBA(0xef7e42ff),
+      .color = RGBA(0xf1a355ff),
     },
     {
-      .color = RGBA(0xe4dd52ff),
+      .color = RGBA(0xf1dc55ff),
     },
     {
-      .color = RGBA(0x9ac546ff),
+      .color = RGBA(0x7bcc7bff),
     },
     {
-      .color = RGBA(0x46bcc2ff),
+      .color = RGBA(0x5db6eaff),
     },
     {
-      .color = RGBA(0x8b65dcff),
+      .color = RGBA(0x8d59daff),
     },
     {
-      .color = RGBA(0x999999ff),
+      .color = RGBA(0xc673b8ff),
     },
     {
-      .color = RGBA(0x06d4432ff),
+      .color = RGBA(0x7a5441ff),
     },
   },
 };

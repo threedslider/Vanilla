@@ -28,6 +28,10 @@
 #include "DNA_defs.h"
 #include "DNA_listBase.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct Action;
 struct Ipo;
 struct Text;
@@ -60,7 +64,7 @@ typedef struct bConstraint {
   /** Constraint name, MAX_NAME. */
   char name[64];
 
-  /* Flag for panel and subpanel closed / open state in the UI. */
+  /* An "expand" bit for each of the constraint's (sub)panels (uiPanelDataExpansion). */
   short ui_expand_flag;
 
   /** Amount of influence exherted by constraint (0.0-1.0). */
@@ -1172,3 +1176,7 @@ typedef enum eStretchTo_Flags {
 #define CONSTRAINT_RB_CONETWIST 4
 #define CONSTRAINT_RB_VEHICLE 11
 #define CONSTRAINT_RB_GENERIC6DOF 12
+
+#ifdef __cplusplus
+}
+#endif

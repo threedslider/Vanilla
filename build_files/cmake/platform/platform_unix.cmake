@@ -350,15 +350,12 @@ if(WITH_BOOST)
   endif()
 endif()
 
+if(WITH_PUGIXML)
+  find_package_wrapper(PugiXML)
+endif()
+
 if(WITH_OPENIMAGEIO)
   find_package_wrapper(OpenImageIO)
-  if(NOT OPENIMAGEIO_PUGIXML_FOUND AND WITH_CYCLES_STANDALONE)
-    find_package_wrapper(PugiXML)
-  else()
-    set(PUGIXML_INCLUDE_DIR "${OPENIMAGEIO_INCLUDE_DIR/OpenImageIO}")
-    set(PUGIXML_LIBRARIES "")
-  endif()
-
   set(OPENIMAGEIO_LIBRARIES
     ${OPENIMAGEIO_LIBRARIES}
     ${PNG_LIBRARIES}
@@ -686,4 +683,16 @@ set(PLATFORM_LINKFLAGS
 # for non-portable installs as typically used by Linux distributions.
 if(WITH_INSTALL_PORTABLE)
   string(APPEND CMAKE_EXE_LINKER_FLAGS " -no-pie")
+endif()
+
+if(WITH_COMPILER_CCACHE)
+  find_program(CCACHE_PROGRAM ccache)
+  if(CCACHE_PROGRAM)
+    # Makefiles and ninja
+    set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+  else()
+    message(WARNING "Ccache NOT found, disabling WITH_COMPILER_CCACHE")
+    set(WITH_COMPILER_CCACHE OFF)
+  endif()
 endif()

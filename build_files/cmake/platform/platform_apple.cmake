@@ -73,15 +73,16 @@ endif()
 
 if(NOT DEFINED LIBDIR)
   set(LIBDIR ${CMAKE_SOURCE_DIR}/../lib/darwin)
-  # Prefer lib directory paths
-  file(GLOB LIB_SUBDIRS ${LIBDIR}/*)
-  set(CMAKE_PREFIX_PATH ${LIB_SUBDIRS})
 else()
   message(STATUS "Using pre-compiled LIBDIR: ${LIBDIR}")
 endif()
 if(NOT EXISTS "${LIBDIR}/")
   message(FATAL_ERROR "Mac OSX requires pre-compiled libs at: '${LIBDIR}'")
 endif()
+
+# Prefer lib directory paths
+file(GLOB LIB_SUBDIRS ${LIBDIR}/*)
+set(CMAKE_PREFIX_PATH ${LIB_SUBDIRS})
 
 # -------------------------------------------------------------------------
 # Find precompiled libraries, and avoid system or user-installed ones.
@@ -267,6 +268,14 @@ endif()
 
 if(WITH_INTERNATIONAL OR WITH_CODEC_FFMPEG)
   string(APPEND PLATFORM_LINKFLAGS " -liconv") # boost_locale and ffmpeg needs it !
+endif()
+
+if(WITH_PUGIXML)
+  find_package(PugiXML)
+  if(NOT PUGIXML_FOUND)
+    message(WARNING "PugiXML not found, disabling WITH_PUGIXML")
+    set(WITH_PUGIXML OFF)
+  endif()
 endif()
 
 if(WITH_OPENIMAGEIO)
@@ -461,3 +470,17 @@ set(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
 set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
 set(CMAKE_C_ARCHIVE_FINISH   "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
 set(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+
+if(WITH_COMPILER_CCACHE)
+  if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+    find_program(CCACHE_PROGRAM ccache)
+    if(CCACHE_PROGRAM)
+      # Makefiles and ninja
+      set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+      set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+    else()
+      message(WARNING "Ccache NOT found, disabling WITH_COMPILER_CCACHE")
+      set(WITH_COMPILER_CCACHE OFF)
+    endif()
+  endif()
+endif()

@@ -49,6 +49,7 @@
 #include "BKE_linestyle.h"
 #include "BKE_material.h"
 #include "BKE_modifier.h"
+#include "BKE_object.h"
 #include "BKE_paint.h"
 #include "BKE_particle.h"
 #include "BKE_screen.h"
@@ -274,16 +275,22 @@ static bool buttons_context_path_modifier(ButsContextPath *path)
   if (buttons_context_path_object(path)) {
     Object *ob = path->ptr[path->len - 1].data;
 
-    if (ob && ELEM(ob->type,
-                   OB_MESH,
-                   OB_CURVE,
-                   OB_FONT,
-                   OB_SURF,
-                   OB_LATTICE,
-                   OB_GPENCIL,
-                   OB_HAIR,
-                   OB_POINTCLOUD,
-                   OB_VOLUME)) {
+    if (ELEM(ob->type,
+             OB_MESH,
+             OB_CURVE,
+             OB_FONT,
+             OB_SURF,
+             OB_LATTICE,
+             OB_GPENCIL,
+             OB_HAIR,
+             OB_POINTCLOUD,
+             OB_VOLUME)) {
+      ModifierData *md = BKE_object_active_modifier(ob);
+      if (md != NULL) {
+        RNA_pointer_create(&ob->id, &RNA_Modifier, md, &path->ptr[path->len]);
+        path->len++;
+      }
+
       return true;
     }
   }
@@ -745,26 +752,25 @@ static bool is_pointer_in_path(ButsContextPath *path, PointerRNA *ptr)
   return false;
 }
 
-void ED_buttons_set_context(const bContext *C, PointerRNA *ptr, const int context)
+bool ED_buttons_should_sync_with_outliner(const bContext *C,
+                                          const SpaceProperties *sbuts,
+                                          ScrArea *area)
 {
   ScrArea *active_area = CTX_wm_area(C);
-  bScreen *screen = CTX_wm_screen(C);
+  const bool auto_sync = ED_area_has_shared_border(active_area, area) &&
+                         sbuts->outliner_sync == PROPERTIES_SYNC_AUTO;
+  return auto_sync || sbuts->outliner_sync == PROPERTIES_SYNC_ON;
+}
 
-  LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
-    /* Only update for properties editors that are visible and share a border. */
-    if (area->spacetype != SPACE_PROPERTIES) {
-      continue;
-    }
-    if (!ED_area_has_shared_border(active_area, area)) {
-      continue;
-    }
-
-    SpaceProperties *sbuts = (SpaceProperties *)area->spacedata.first;
-    ButsContextPath path;
-    if (buttons_context_path(C, sbuts, &path, context, 0) && is_pointer_in_path(&path, ptr)) {
-      sbuts->mainbuser = context;
-      sbuts->mainb = sbuts->mainbuser;
-    }
+void ED_buttons_set_context(const bContext *C,
+                            SpaceProperties *sbuts,
+                            PointerRNA *ptr,
+                            const int context)
+{
+  ButsContextPath path;
+  if (buttons_context_path(C, sbuts, &path, context, 0) && is_pointer_in_path(&path, ptr)) {
+    sbuts->mainbuser = context;
+    sbuts->mainb = sbuts->mainbuser;
   }
 }
 
@@ -819,6 +825,11 @@ int /*eContextResult*/ buttons_context(const bContext *C,
                                        bContextDataResult *result)
 {
   SpaceProperties *sbuts = CTX_wm_space_properties(C);
+  if (sbuts && sbuts->path == NULL) {
+    /* path is cleared for SCREEN_OT_redo_last, when global undo does a file-read which clears the
+     * path (see lib_link_workspace_layout_restore). */
+    buttons_context_compute(C, sbuts);
+  }
   ButsContextPath *path = sbuts ? sbuts->path : NULL;
 
   if (!path) {
@@ -940,6 +951,17 @@ int /*eContextResult*/ buttons_context(const bContext *C,
     }
 
     return CTX_RESULT_OK;
+  }
+  if (CTX_data_equals(member, "modifier")) {
+    PointerRNA *ptr = get_pointer_type(path, &RNA_Modifier);
+
+    if (ptr != NULL && !RNA_pointer_is_null(ptr)) {
+      Object *ob = (Object *)ptr->owner_id;
+      ModifierData *md = ptr->data;
+      CTX_data_pointer_set(result, &ob->id, &RNA_Modifier, md);
+      return CTX_RESULT_OK;
+    }
+    return CTX_RESULT_NO_DATA;
   }
   if (CTX_data_equals(member, "texture_user")) {
     ButsContextTexture *ct = sbuts->texuser;

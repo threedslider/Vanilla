@@ -1996,7 +1996,7 @@ static void outliner_draw_mode_column_toggle(uiBlock *block,
         "Change the object in the current mode\n"
         "* Ctrl to add to the current mode");
   }
-
+  UI_block_emboss_set(block, UI_EMBOSS_NONE_OR_STATUS);
   uiBut *but = uiDefIconBut(block,
                             UI_BTYPE_ICON_TOGGLE,
                             0,
@@ -2179,6 +2179,10 @@ TreeElementIcon tree_element_get_icon(TreeStoreElem *tselem, TreeElement *te)
       case TSE_MODIFIER_BASE:
         data.icon = ICON_MODIFIER_DATA;
         data.drag_id = tselem->id;
+        break;
+      case TSE_LIBRARY_OVERRIDE_BASE:
+      case TSE_LIBRARY_OVERRIDE:
+        data.icon = ICON_LIBRARY_DATA_OVERRIDE;
         break;
       case TSE_LINKED_OB:
         data.icon = ICON_OBJECT_DATA;
@@ -2782,7 +2786,7 @@ static void outliner_draw_iconrow_doit(uiBlock *block,
                                    icon_border);
   }
 
-  if (tselem->flag & TSE_HIGHLIGHTED) {
+  if (tselem->flag & TSE_HIGHLIGHTED_ICON) {
     alpha_fac += 0.5;
   }
   tselem_draw_icon(block, xmax, (float)*offsx, (float)ys, tselem, te, alpha_fac, false);
@@ -2845,6 +2849,7 @@ static void outliner_draw_iconrow(bContext *C,
 
   LISTBASE_FOREACH (TreeElement *, te, lb) {
     TreeStoreElem *tselem = TREESTORE(te);
+    te->flag &= ~(TE_ICONROW | TE_ICONROW_MERGED);
 
     /* object hierarchy always, further constrained on level */
     if (level < 1 || (tselem->type == 0 && te->idcode == ID_OB)) {
@@ -2928,8 +2933,6 @@ static void outliner_draw_iconrow(bContext *C,
 /* closed tree element */
 static void outliner_set_coord_tree_element(TreeElement *te, int startx, int starty)
 {
-  TreeElement *ten;
-
   /* closed items may be displayed in row of parent, don't change their coordinate! */
   if ((te->flag & TE_ICONROW) == 0 && (te->flag & TE_ICONROW_MERGED) == 0) {
     te->xs = 0;
@@ -2937,7 +2940,7 @@ static void outliner_set_coord_tree_element(TreeElement *te, int startx, int sta
     te->xend = 0;
   }
 
-  for (ten = te->subtree.first; ten; ten = ten->next) {
+  LISTBASE_FOREACH (TreeElement *, ten, &te->subtree) {
     outliner_set_coord_tree_element(ten, startx + UI_UNIT_X, starty);
   }
 }
@@ -3078,8 +3081,14 @@ static void outliner_draw_tree_element(bContext *C,
 
     /* datatype icon */
     if (!(ELEM(tselem->type, TSE_RNA_PROPERTY, TSE_RNA_ARRAY_ELEM, TSE_ID_BASE))) {
-      tselem_draw_icon(
-          block, xmax, (float)startx + offsx, (float)*starty, tselem, te, alpha_fac, true);
+      tselem_draw_icon(block,
+                       xmax,
+                       (float)startx + offsx,
+                       (float)*starty,
+                       tselem,
+                       te,
+                       (tselem->flag & TSE_HIGHLIGHTED_ICON) ? alpha_fac + 0.5f : alpha_fac,
+                       true);
       offsx += UI_UNIT_X + 4 * ufac;
     }
     else {
@@ -3641,7 +3650,7 @@ void draw_outliner(const bContext *C)
   outliner_tree_dimensions(space_outliner, &tree_width, &tree_height);
 
   /* Default to no emboss for outliner UI. */
-  UI_block_emboss_set(block, UI_EMBOSS_NONE);
+  UI_block_emboss_set(block, UI_EMBOSS_NONE_OR_STATUS);
 
   if (space_outliner->outlinevis == SO_DATA_API) {
     int buttons_start_x = outliner_data_api_buttons_start_x(tree_width);
@@ -3650,7 +3659,7 @@ void draw_outliner(const bContext *C)
 
     UI_block_emboss_set(block, UI_EMBOSS);
     outliner_draw_rnabuts(block, region, space_outliner, buttons_start_x, &space_outliner->tree);
-    UI_block_emboss_set(block, UI_EMBOSS_NONE);
+    UI_block_emboss_set(block, UI_EMBOSS_NONE_OR_STATUS);
   }
   else if (space_outliner->outlinevis == SO_ID_ORPHANS) {
     /* draw user toggle columns */

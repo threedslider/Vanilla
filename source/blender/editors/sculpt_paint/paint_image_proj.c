@@ -6299,7 +6299,7 @@ void PAINT_OT_image_from_view(wmOperatorType *ot)
   /* identifiers */
   ot->name = "Image from View";
   ot->idname = "PAINT_OT_image_from_view";
-  ot->description = "Make an image from biggest 3D view for re-projection";
+  ot->description = "Make an image from biggest 3D view for reprojection";
 
   /* api callbacks */
   ot->exec = texture_paint_image_from_view_exec;
@@ -6748,7 +6748,7 @@ void PAINT_OT_add_texture_paint_slot(wmOperatorType *ot)
                "Generated Type",
                "Fill the image with a grid for UV map testing");
   RNA_def_boolean(
-      ot->srna, "float", 0, "32 bit Float", "Create image with 32 bit floating point bit depth");
+      ot->srna, "float", 0, "32-bit Float", "Create image with 32-bit floating-point bit depth");
 }
 
 static int add_simple_uvs_exec(bContext *C, wmOperator *UNUSED(op))
@@ -6781,7 +6781,7 @@ static bool add_simple_uvs_poll(bContext *C)
 void PAINT_OT_add_simple_uvs(wmOperatorType *ot)
 {
   /* identifiers */
-  ot->name = "Add simple UVs";
+  ot->name = "Add Simple UVs";
   ot->description = "Add cube map uvs on mesh";
   ot->idname = "PAINT_OT_add_simple_uvs";
 

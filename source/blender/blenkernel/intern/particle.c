@@ -41,6 +41,7 @@
 #include "DNA_material_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_object_force_types.h"
 #include "DNA_particle_types.h"
 #include "DNA_scene_types.h"
 
@@ -74,6 +75,7 @@
 #include "BKE_material.h"
 #include "BKE_mesh.h"
 #include "BKE_modifier.h"
+#include "BKE_object.h"
 #include "BKE_particle.h"
 #include "BKE_pointcache.h"
 #include "BKE_scene.h"
@@ -3947,6 +3949,7 @@ static ModifierData *object_add_or_copy_particle_system(
   psmd = (ParticleSystemModifierData *)md;
   psmd->psys = psys;
   BLI_addtail(&ob->modifiers, md);
+  BKE_object_modifier_set_active(ob, md);
 
   psys->totpart = 0;
   psys->flag = PSYS_CURRENT;
@@ -4046,7 +4049,7 @@ void object_remove_particle_system(Main *bmain, Scene *UNUSED(scene), Object *ob
   /* Clear modifier, skip empty ones. */
   psmd = psys_get_modifier(ob, psys);
   if (psmd) {
-    BLI_remlink(&ob->modifiers, psmd);
+    BKE_modifier_remove_from_list(ob, (ModifierData *)psmd);
     BKE_modifier_free((ModifierData *)psmd);
   }
 
@@ -5401,7 +5404,7 @@ void BKE_particle_system_blend_read_lib(BlendLibReader *reader,
     else {
       /* particle modifier must be removed before particle system */
       ParticleSystemModifierData *psmd = psys_get_modifier(ob, psys);
-      BLI_remlink(&ob->modifiers, psmd);
+      BKE_modifier_remove_from_list(ob, (ModifierData *)psmd);
       BKE_modifier_free((ModifierData *)psmd);
 
       BLI_remlink(particles, psys);

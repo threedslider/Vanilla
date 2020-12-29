@@ -80,7 +80,7 @@
 #include "RE_engine.h"
 #include "RE_pipeline.h" /* RE_ free stuff */
 
-#include "SEQ_sequencer.h" /* free seq clipboard */
+#include "SEQ_clipboard.h" /* free seq clipboard */
 
 #include "IMB_thumbs.h"
 
@@ -412,9 +412,7 @@ void WM_init_splash(bContext *C)
 /* free strings of open recent files */
 static void free_openrecent(void)
 {
-  struct RecentFile *recent;
-
-  for (recent = G.recent_files.first; recent; recent = recent->next) {
+  LISTBASE_FOREACH (RecentFile *, recent, &G.recent_files) {
     MEM_freeN(recent->filepath);
   }
 
@@ -567,7 +565,7 @@ void WM_exit_ex(bContext *C, const bool do_python)
     wm_free_reports(wm);
   }
 
-  BKE_sequencer_free_clipboard(); /* sequencer.c */
+  SEQ_clipboard_free(); /* sequencer.c */
   BKE_tracking_clipboard_free();
   BKE_mask_clipboard_free();
   BKE_vfont_clipboard_free();
@@ -656,6 +654,7 @@ void WM_exit_ex(bContext *C, const bool do_python)
    * pieces of Blender using sound may exit cleanly, see also T50676. */
   BKE_sound_exit();
 
+  BKE_appdir_exit();
   CLG_exit();
 
   BKE_blender_atexit();

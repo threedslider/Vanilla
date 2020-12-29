@@ -72,6 +72,7 @@
 #include "ED_sequencer.h"
 #include "ED_undo.h"
 
+#include "SEQ_select.h"
 #include "SEQ_sequencer.h"
 
 #include "WM_api.h"
@@ -870,13 +871,13 @@ static eOLDrawState tree_element_active_sequence(bContext *C,
                                                  const eOLSetState set)
 {
   Sequence *seq = (Sequence *)te->directdata;
-  Editing *ed = BKE_sequencer_editing_get(scene, false);
+  Editing *ed = SEQ_editing_get(scene, false);
 
   if (set != OL_SETSEL_NONE) {
     /* only check on setting */
     if (BLI_findindex(ed->seqbasep, seq) != -1) {
       if (set == OL_SETSEL_EXTEND) {
-        BKE_sequencer_active_set(scene, NULL);
+        SEQ_select_active_set(scene, NULL);
       }
       ED_sequencer_deselect_all(scene);
 
@@ -885,7 +886,7 @@ static eOLDrawState tree_element_active_sequence(bContext *C,
       }
       else {
         seq->flag |= SELECT;
-        BKE_sequencer_active_set(scene, seq);
+        SEQ_select_active_set(scene, seq);
       }
     }
 
@@ -905,7 +906,7 @@ static eOLDrawState tree_element_active_sequence_dup(Scene *scene,
                                                      const eOLSetState set)
 {
   Sequence *seq, *p;
-  Editing *ed = BKE_sequencer_editing_get(scene, false);
+  Editing *ed = SEQ_editing_get(scene, false);
 
   seq = (Sequence *)te->directdata;
   if (set == OL_SETSEL_NONE) {
@@ -1104,6 +1105,24 @@ bPoseChannel *outliner_find_parent_bone(TreeElement *te, TreeElement **r_bone_te
   return NULL;
 }
 
+static void outliner_sync_to_properties_editors(const bContext *C,
+                                                PointerRNA *ptr,
+                                                const int context)
+{
+  bScreen *screen = CTX_wm_screen(C);
+
+  LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
+    if (area->spacetype != SPACE_PROPERTIES) {
+      continue;
+    }
+
+    SpaceProperties *sbuts = (SpaceProperties *)area->spacedata.first;
+    if (ED_buttons_should_sync_with_outliner(C, sbuts, area)) {
+      ED_buttons_set_context(C, sbuts, ptr, context);
+    }
+  }
+}
+
 static void outliner_set_properties_tab(bContext *C, TreeElement *te, TreeStoreElem *tselem)
 {
   PointerRNA ptr = {0};
@@ -1185,6 +1204,7 @@ static void outliner_set_properties_tab(bContext *C, TreeElement *te, TreeStoreE
           }
           else {
             ModifierData *md = (ModifierData *)te->directdata;
+            BKE_object_modifier_set_active(ob, md);
 
             switch ((ModifierType)md->type) {
               case eModifierType_ParticleSystem:
@@ -1283,7 +1303,7 @@ static void outliner_set_properties_tab(bContext *C, TreeElement *te, TreeStoreE
   }
 
   if (ptr.data) {
-    ED_buttons_set_context(C, &ptr, context);
+    outliner_sync_to_properties_editors(C, &ptr, context);
   }
 }
 
@@ -1563,11 +1583,9 @@ static int outliner_item_do_activate_from_cursor(bContext *C,
   else {
     /* The row may also contain children, if one is hovered we want this instead of current te. */
     bool merged_elements = false;
+    bool is_over_icon = false;
     TreeElement *activate_te = outliner_find_item_at_x_in_row(
-        space_outliner, te, view_mval[0], &merged_elements);
-
-    /* If `outliner_find_item_at_x_in_row` returned a different element a row icon was selected. */
-    const bool is_row_icon = te != activate_te;
+        space_outliner, te, view_mval[0], &merged_elements, &is_over_icon);
 
     /* If the selected icon was an aggregate of multiple elements, run the search popup */
     if (merged_elements) {
@@ -1594,7 +1612,7 @@ static int outliner_item_do_activate_from_cursor(bContext *C,
       outliner_item_select(C, space_outliner, activate_te, select_flag);
 
       /* Only switch properties editor tabs when icons are selected. */
-      if (is_row_icon || outliner_item_is_co_over_icon(activate_te, view_mval[0])) {
+      if (is_over_icon) {
         outliner_set_properties_tab(C, activate_te, activate_tselem);
       }
     }

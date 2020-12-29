@@ -264,7 +264,7 @@ typedef struct uiWidgetType {
   /* converted colors for state */
   uiWidgetColors wcol;
 
-  void (*state)(struct uiWidgetType *, int state, int drawflag);
+  void (*state)(struct uiWidgetType *, int state, int drawflag, eUIEmbossType emboss);
   void (*draw)(uiWidgetColors *, rcti *, int state, int roundboxalign);
   void (*custom)(uiBut *, uiWidgetColors *, rcti *, int state, int roundboxalign);
   void (*text)(const uiFontStyle *, const uiWidgetColors *, uiBut *, rcti *);
@@ -2520,8 +2520,14 @@ static void widget_active_color(uiWidgetColors *wcol)
 
 static const uchar *widget_color_blend_from_flags(const uiWidgetStateColors *wcol_state,
                                                   int state,
-                                                  int drawflag)
+                                                  int drawflag,
+                                                  const eUIEmbossType emboss)
 {
+  /* Explicitly require #UI_EMBOSS_NONE_OR_STATUS for color blending with no emboss. */
+  if (emboss == UI_EMBOSS_NONE) {
+    return NULL;
+  }
+
   if (drawflag & UI_BUT_ANIMATED_CHANGED) {
     return wcol_state->inner_changed_sel;
   }
@@ -2534,14 +2540,14 @@ static const uchar *widget_color_blend_from_flags(const uiWidgetStateColors *wco
   if (state & UI_BUT_DRIVEN) {
     return wcol_state->inner_driven_sel;
   }
-  if (state & UI_BUT_OVERRIDEN) {
+  if (state & UI_BUT_OVERRIDDEN) {
     return wcol_state->inner_overridden_sel;
   }
   return NULL;
 }
 
 /* copy colors from theme, and set changes in it based on state */
-static void widget_state(uiWidgetType *wt, int state, int drawflag)
+static void widget_state(uiWidgetType *wt, int state, int drawflag, eUIEmbossType emboss)
 {
   uiWidgetStateColors *wcol_state = wt->wcol_state;
 
@@ -2557,7 +2563,7 @@ static void widget_state(uiWidgetType *wt, int state, int drawflag)
 
   wt->wcol = *(wt->wcol_theme);
 
-  const uchar *color_blend = widget_color_blend_from_flags(wcol_state, state, drawflag);
+  const uchar *color_blend = widget_color_blend_from_flags(wcol_state, state, drawflag, emboss);
 
   if (state & UI_SELECT) {
     copy_v4_v4_uchar(wt->wcol.inner, wt->wcol.inner_sel);
@@ -2591,7 +2597,7 @@ static void widget_state(uiWidgetType *wt, int state, int drawflag)
 
   if (state & UI_BUT_REDALERT) {
     const uchar red[4] = {255, 0, 0};
-    if (wt->draw) {
+    if (wt->draw && emboss != UI_EMBOSS_NONE) {
       color_blend_v3_v3(wt->wcol.inner, red, 0.4f);
     }
     else {
@@ -2619,14 +2625,14 @@ static void widget_state(uiWidgetType *wt, int state, int drawflag)
  * \{ */
 
 /* sliders use special hack which sets 'item' as inner when drawing filling */
-static void widget_state_numslider(uiWidgetType *wt, int state, int drawflag)
+static void widget_state_numslider(uiWidgetType *wt, int state, int drawflag, eUIEmbossType emboss)
 {
   uiWidgetStateColors *wcol_state = wt->wcol_state;
 
   /* call this for option button */
-  widget_state(wt, state, drawflag);
+  widget_state(wt, state, drawflag, emboss);
 
-  const uchar *color_blend = widget_color_blend_from_flags(wcol_state, state, drawflag);
+  const uchar *color_blend = widget_color_blend_from_flags(wcol_state, state, drawflag, emboss);
   if (color_blend != NULL) {
     /* Set the slider 'item' so that it reflects state settings too.
      * De-saturate so the color of the slider doesn't conflict with the blend color,
@@ -2642,7 +2648,10 @@ static void widget_state_numslider(uiWidgetType *wt, int state, int drawflag)
 }
 
 /* labels use theme colors for text */
-static void widget_state_option_menu(uiWidgetType *wt, int state, int drawflag)
+static void widget_state_option_menu(uiWidgetType *wt,
+                                     int state,
+                                     int drawflag,
+                                     eUIEmbossType emboss)
 {
   const bTheme *btheme = UI_GetTheme();
 
@@ -2654,24 +2663,33 @@ static void widget_state_option_menu(uiWidgetType *wt, int state, int drawflag)
   copy_v3_v3_uchar(wcol_menu_option.text_sel, btheme->tui.wcol_menu_back.text_sel);
   wt->wcol_theme = &wcol_menu_option;
 
-  widget_state(wt, state, drawflag);
+  widget_state(wt, state, drawflag, emboss);
 
   wt->wcol_theme = old_wcol;
 }
 
-static void widget_state_nothing(uiWidgetType *wt, int UNUSED(state), int UNUSED(drawflag))
+static void widget_state_nothing(uiWidgetType *wt,
+                                 int UNUSED(state),
+                                 int UNUSED(drawflag),
+                                 eUIEmbossType UNUSED(emboss))
 {
   wt->wcol = *(wt->wcol_theme);
 }
 
 /* special case, button that calls pulldown */
-static void widget_state_pulldown(uiWidgetType *wt, int UNUSED(state), int UNUSED(drawflag))
+static void widget_state_pulldown(uiWidgetType *wt,
+                                  int UNUSED(state),
+                                  int UNUSED(drawflag),
+                                  eUIEmbossType UNUSED(emboss))
 {
   wt->wcol = *(wt->wcol_theme);
 }
 
 /* special case, pie menu items */
-static void widget_state_pie_menu_item(uiWidgetType *wt, int state, int UNUSED(drawflag))
+static void widget_state_pie_menu_item(uiWidgetType *wt,
+                                       int state,
+                                       int UNUSED(drawflag),
+                                       eUIEmbossType UNUSED(emboss))
 {
   wt->wcol = *(wt->wcol_theme);
 
@@ -2703,7 +2721,10 @@ static void widget_state_pie_menu_item(uiWidgetType *wt, int state, int UNUSED(d
 }
 
 /* special case, menu items */
-static void widget_state_menu_item(uiWidgetType *wt, int state, int UNUSED(drawflag))
+static void widget_state_menu_item(uiWidgetType *wt,
+                                   int state,
+                                   int UNUSED(drawflag),
+                                   eUIEmbossType UNUSED(emboss))
 {
   wt->wcol = *(wt->wcol_theme);
 
@@ -2894,12 +2915,12 @@ static void ui_draw_but_HSVCIRCLE(uiBut *but, const uiWidgetColors *wcol, const 
   const bool is_color_gamma = ui_but_is_color_gamma(but);
 
   /* Initialize for compatibility. */
-  copy_v3_v3(hsv, cpicker->color_data);
+  copy_v3_v3(hsv, cpicker->hsv_perceptual);
 
   /* Compute current hue. */
   ui_but_v3_get(but, rgb);
-  ui_scene_linear_to_color_picker_space(but, rgb);
-  ui_rgb_to_color_picker_compat_v(rgb, hsv);
+  ui_scene_linear_to_perceptual_space(but, rgb);
+  ui_color_picker_rgb_to_hsv_compat(rgb, hsv);
 
   CLAMP(hsv[2], 0.0f, 1.0f); /* for display only */
 
@@ -2916,8 +2937,8 @@ static void ui_draw_but_HSVCIRCLE(uiBut *but, const uiWidgetColors *wcol, const 
   }
 
   const float hsv_center[3] = {0.0f, 0.0f, hsv[2]};
-  ui_color_picker_to_rgb_v(hsv_center, rgb_center);
-  ui_color_picker_to_scene_linear_space(but, rgb_center);
+  ui_color_picker_hsv_to_rgb(hsv_center, rgb_center);
+  ui_perceptual_to_scene_linear_space(but, rgb_center);
 
   if (!is_color_gamma) {
     ui_block_cm_to_display_space_v3(but->block, rgb_center);
@@ -2944,8 +2965,8 @@ static void ui_draw_but_HSVCIRCLE(uiBut *but, const uiWidgetColors *wcol, const 
         rect, centx + co * radius, centy + si * radius, hsv_ang, hsv_ang + 1);
     hsv_ang[2] = hsv[2];
 
-    ui_color_picker_to_rgb_v(hsv_ang, rgb_ang);
-    ui_color_picker_to_scene_linear_space(but, rgb_ang);
+    ui_color_picker_hsv_to_rgb(hsv_ang, rgb_ang);
+    ui_perceptual_to_scene_linear_space(but, rgb_ang);
 
     if (!is_color_gamma) {
       ui_block_cm_to_display_space_v3(but->block, rgb_ang);
@@ -2975,10 +2996,10 @@ static void ui_draw_but_HSVCIRCLE(uiBut *but, const uiWidgetColors *wcol, const 
   GPU_line_smooth(false);
 
   /* cursor */
-  copy_v3_v3(hsv, cpicker->color_data);
+  copy_v3_v3(hsv, cpicker->hsv_perceptual);
   ui_but_v3_get(but, rgb);
-  ui_scene_linear_to_color_picker_space(but, rgb);
-  ui_rgb_to_color_picker_compat_v(rgb, hsv);
+  ui_scene_linear_to_perceptual_space(but, rgb);
+  ui_color_picker_rgb_to_hsv_compat(rgb, hsv);
 
   float xpos, ypos;
   ui_hsvcircle_pos_from_vals(cpicker, rect, hsv, &xpos, &ypos);
@@ -3200,14 +3221,14 @@ static void ui_draw_but_HSVCUBE(uiBut *but, const rcti *rect)
   float rgb[3];
   float x = 0.0f, y = 0.0f;
   ColorPicker *cpicker = but->custom_data;
-  float *hsv = cpicker->color_data;
+  float *hsv = cpicker->hsv_perceptual;
   float hsv_n[3];
 
   /* Initialize for compatibility. */
   copy_v3_v3(hsv_n, hsv);
 
   ui_but_v3_get(but, rgb);
-  ui_scene_linear_to_color_picker_space(but, rgb);
+  ui_scene_linear_to_perceptual_space(but, rgb);
   rgb_to_hsv_compat_v(rgb, hsv_n);
 
   ui_draw_gradient(rect, hsv_n, hsv_but->gradient_type, 1.0f);
@@ -3239,7 +3260,7 @@ static void ui_draw_but_HSV_v(uiBut *but, const rcti *rect)
   float rgb[3], hsv[3], v;
 
   ui_but_v3_get(but, rgb);
-  ui_scene_linear_to_color_picker_space(but, rgb);
+  ui_scene_linear_to_perceptual_space(but, rgb);
 
   if (hsv_but->gradient_type == UI_GRAD_L_ALT) {
     rgb_to_hsl_v(rgb, hsv);
@@ -3803,7 +3824,7 @@ static void widget_swatch(
 
   ui_but_v3_get(but, col);
 
-  if ((state & (UI_BUT_ANIMATED | UI_BUT_ANIMATED_KEY | UI_BUT_DRIVEN | UI_BUT_OVERRIDEN |
+  if ((state & (UI_BUT_ANIMATED | UI_BUT_ANIMATED_KEY | UI_BUT_DRIVEN | UI_BUT_OVERRIDDEN |
                 UI_BUT_REDALERT)) ||
       (but->drawflag & UI_BUT_ANIMATED_CHANGED)) {
     /* draw based on state - color for keyed etc */
@@ -3872,7 +3893,8 @@ static void widget_unitvec(
 static void widget_icon_has_anim(
     uiBut *but, uiWidgetColors *wcol, rcti *rect, int state, int roundboxalign)
 {
-  if (state & (UI_BUT_ANIMATED | UI_BUT_ANIMATED_KEY | UI_BUT_DRIVEN | UI_BUT_REDALERT)) {
+  if (state & (UI_BUT_ANIMATED | UI_BUT_ANIMATED_KEY | UI_BUT_DRIVEN | UI_BUT_REDALERT) &&
+      but->emboss != UI_EMBOSS_NONE) {
     uiWidgetBase wtb;
     widget_init(&wtb);
     wtb.draw_outline = false;
@@ -4051,18 +4073,18 @@ static void widget_optionbut(uiWidgetColors *wcol,
 }
 
 /* labels use Editor theme colors for text */
-static void widget_state_label(uiWidgetType *wt, int state, int drawflag)
+static void widget_state_label(uiWidgetType *wt, int state, int drawflag, eUIEmbossType emboss)
 {
   if (state & UI_BUT_LIST_ITEM) {
     /* Override default label theme's colors. */
     bTheme *btheme = UI_GetTheme();
     wt->wcol_theme = &btheme->tui.wcol_list_item;
     /* call this for option button */
-    widget_state(wt, state, drawflag);
+    widget_state(wt, state, drawflag, emboss);
   }
   else {
     /* call this for option button */
-    widget_state(wt, state, drawflag);
+    widget_state(wt, state, drawflag, emboss);
     if (state & UI_SELECT) {
       UI_GetThemeColor3ubv(TH_TEXT_HI, wt->wcol.text);
     }
@@ -4511,8 +4533,9 @@ void ui_draw_but(const bContext *C, struct ARegion *region, uiStyle *style, uiBu
         break;
     }
   }
-  else if (but->emboss == UI_EMBOSS_NONE) {
-    /* "nothing" */
+  else if (ELEM(but->emboss, UI_EMBOSS_NONE, UI_EMBOSS_NONE_OR_STATUS)) {
+    /* Use the same widget types for both no emboss types. Later on,
+     * #UI_EMBOSS_NONE_OR_STATUS will blend state colors if they apply. */
     switch (but->type) {
       case UI_BTYPE_LABEL:
         wt = widget_type(UI_WTYPE_ICON_LABEL);
@@ -4748,73 +4771,75 @@ void ui_draw_but(const bContext *C, struct ARegion *region, uiStyle *style, uiBu
     }
   }
 
-  if (wt) {
-    // rcti disablerect = *rect; /* rect gets clipped smaller for text */
+  if (wt == NULL) {
+    return;
+  }
 
-    const int roundboxalign = widget_roundbox_set(but, rect);
+  // rcti disablerect = *rect; /* rect gets clipped smaller for text */
 
-    /* Mask out flags re-used for local state. */
-    int state = but->flag & ~UI_STATE_FLAGS_ALL;
-    const int drawflag = but->drawflag;
+  const int roundboxalign = widget_roundbox_set(but, rect);
 
-    if (state & UI_SELECT_DRAW) {
-      state |= UI_SELECT;
+  /* Mask out flags re-used for local state. */
+  int state = but->flag & ~UI_STATE_FLAGS_ALL;
+  const int drawflag = but->drawflag;
+
+  if (state & UI_SELECT_DRAW) {
+    state |= UI_SELECT;
+  }
+
+  if ((but->editstr) ||
+      (UNLIKELY(but->flag & UI_BUT_DRAG_MULTI) && ui_but_drag_multi_edit_get(but))) {
+    state |= UI_STATE_TEXT_INPUT;
+  }
+
+  if (but->hold_func) {
+    state |= UI_STATE_HOLD_ACTION;
+  }
+
+  if (state & UI_ACTIVE) {
+    if (but->drawflag & UI_BUT_ACTIVE_LEFT) {
+      state |= UI_STATE_ACTIVE_LEFT;
     }
-
-    if ((but->editstr) ||
-        (UNLIKELY(but->flag & UI_BUT_DRAG_MULTI) && ui_but_drag_multi_edit_get(but))) {
-      state |= UI_STATE_TEXT_INPUT;
+    else if (but->drawflag & UI_BUT_ACTIVE_RIGHT) {
+      state |= UI_STATE_ACTIVE_RIGHT;
     }
+  }
 
-    if (but->hold_func) {
-      state |= UI_STATE_HOLD_ACTION;
+  bool use_alpha_blend = false;
+  if (but->emboss != UI_EMBOSS_PULLDOWN) {
+    if (state & (UI_BUT_DISABLED | UI_BUT_INACTIVE | UI_SEARCH_FILTER_NO_MATCH)) {
+      use_alpha_blend = true;
+      ui_widget_color_disabled(wt, state);
     }
+  }
 
-    if (state & UI_ACTIVE) {
-      if (but->drawflag & UI_BUT_ACTIVE_LEFT) {
-        state |= UI_STATE_ACTIVE_LEFT;
-      }
-      else if (but->drawflag & UI_BUT_ACTIVE_RIGHT) {
-        state |= UI_STATE_ACTIVE_RIGHT;
-      }
-    }
-
-    bool use_alpha_blend = false;
-    if (but->emboss != UI_EMBOSS_PULLDOWN) {
-      if (state & (UI_BUT_DISABLED | UI_BUT_INACTIVE | UI_SEARCH_FILTER_NO_MATCH)) {
-        use_alpha_blend = true;
-        ui_widget_color_disabled(wt, state);
-      }
-    }
-
-    if (drawflag & UI_BUT_TEXT_RIGHT) {
-      state |= UI_STATE_TEXT_BEFORE_WIDGET;
-    }
+  if (drawflag & UI_BUT_TEXT_RIGHT) {
+    state |= UI_STATE_TEXT_BEFORE_WIDGET;
+  }
 
 #ifdef USE_UI_POPOVER_ONCE
-    if (but->block->flag & UI_BLOCK_POPOVER_ONCE) {
-      if ((state & UI_ACTIVE) && ui_but_is_popover_once_compat(but)) {
-        state |= UI_BUT_ACTIVE_DEFAULT;
-      }
+  if (but->block->flag & UI_BLOCK_POPOVER_ONCE) {
+    if ((state & UI_ACTIVE) && ui_but_is_popover_once_compat(but)) {
+      state |= UI_BUT_ACTIVE_DEFAULT;
     }
+  }
 #endif
 
-    wt->state(wt, state, drawflag);
-    if (wt->custom) {
-      wt->custom(but, &wt->wcol, rect, state, roundboxalign);
-    }
-    else if (wt->draw) {
-      wt->draw(&wt->wcol, rect, state, roundboxalign);
-    }
+  wt->state(wt, state, drawflag, but->emboss);
+  if (wt->custom) {
+    wt->custom(but, &wt->wcol, rect, state, roundboxalign);
+  }
+  else if (wt->draw) {
+    wt->draw(&wt->wcol, rect, state, roundboxalign);
+  }
 
-    if (use_alpha_blend) {
-      GPU_blend(GPU_BLEND_ALPHA);
-    }
+  if (use_alpha_blend) {
+    GPU_blend(GPU_BLEND_ALPHA);
+  }
 
-    wt->text(fstyle, &wt->wcol, but, rect);
-    if (use_alpha_blend) {
-      GPU_blend(GPU_BLEND_NONE);
-    }
+  wt->text(fstyle, &wt->wcol, but, rect);
+  if (use_alpha_blend) {
+    GPU_blend(GPU_BLEND_NONE);
   }
 }
 
@@ -4844,7 +4869,7 @@ void ui_draw_menu_back(uiStyle *UNUSED(style), uiBlock *block, rcti *rect)
 {
   uiWidgetType *wt = widget_type(UI_WTYPE_MENU_BACK);
 
-  wt->state(wt, 0, 0);
+  wt->state(wt, 0, 0, UI_EMBOSS_UNDEFINED);
   if (block) {
     wt->draw(&wt->wcol, rect, block->flag, block->direction);
   }
@@ -4865,7 +4890,7 @@ void ui_draw_box_opaque(rcti *rect, int roundboxalign)
 
   /* Alpha blend with the region's background color to force an opaque background. */
   uiWidgetColors *wcol = &wt->wcol;
-  wt->state(wt, 0, 0);
+  wt->state(wt, 0, 0, UI_EMBOSS_UNDEFINED);
   float background[4];
   UI_GetThemeColor4fv(TH_BACK, background);
   float new_inner[4];
@@ -4967,7 +4992,7 @@ void ui_draw_popover_back(struct ARegion *region,
         wt->wcol_theme, rect, block->direction, U.widget_unit / block->aspect, mval_origin);
   }
   else {
-    wt->state(wt, 0, 0);
+    wt->state(wt, 0, 0, UI_EMBOSS_UNDEFINED);
     wt->draw(&wt->wcol, rect, 0, 0);
   }
 
@@ -5156,7 +5181,7 @@ static void ui_draw_widget_back_color(uiWidgetTypeEnum type,
   }
 
   rcti rect_copy = *rect;
-  wt->state(wt, 0, 0);
+  wt->state(wt, 0, 0, UI_EMBOSS_UNDEFINED);
   if (color) {
     rgba_float_to_uchar(wt->wcol.inner, color);
   }
@@ -5175,7 +5200,7 @@ void ui_draw_widget_menu_back(const rcti *rect, bool use_shadow)
 void ui_draw_tooltip_background(const uiStyle *UNUSED(style), uiBlock *UNUSED(block), rcti *rect)
 {
   uiWidgetType *wt = widget_type(UI_WTYPE_TOOLTIP);
-  wt->state(wt, 0, 0);
+  wt->state(wt, 0, 0, UI_EMBOSS_UNDEFINED);
   /* wt->draw ends up using same function to draw the tooltip as menu_back */
   wt->draw(&wt->wcol, rect, 0, 0);
 }
@@ -5202,7 +5227,7 @@ void ui_draw_menu_item(const uiFontStyle *fstyle,
   const rcti _rect = *rect;
   char *cpoin = NULL;
 
-  wt->state(wt, state, 0);
+  wt->state(wt, state, 0, UI_EMBOSS_UNDEFINED);
   wt->draw(&wt->wcol, rect, 0, 0);
 
   UI_fontstyle_set(fstyle);
@@ -5285,7 +5310,7 @@ void ui_draw_menu_item(const uiFontStyle *fstyle,
   if (use_sep) {
     if (cpoin) {
       /* Set inactive state for grayed out text. */
-      wt->state(wt, state | UI_BUT_INACTIVE, 0);
+      wt->state(wt, state | UI_BUT_INACTIVE, 0, UI_EMBOSS_UNDEFINED);
 
       rect->xmax = _rect.xmax - 5;
       UI_fontstyle_draw(fstyle,
@@ -5309,7 +5334,7 @@ void ui_draw_preview_item(
   uiWidgetType *wt = widget_type(UI_WTYPE_MENU_ITEM);
 
   /* drawing button background */
-  wt->state(wt, state, 0);
+  wt->state(wt, state, 0, UI_EMBOSS_UNDEFINED);
   wt->draw(&wt->wcol, rect, 0, 0);
 
   /* draw icon in rect above the space reserved for the label */

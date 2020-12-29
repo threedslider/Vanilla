@@ -4559,7 +4559,7 @@ void BKE_fluid_particle_system_destroy(struct Object *ob, const int particle_typ
     if (psys->part->type == particle_type) {
       /* clear modifier */
       pfmd = psys_get_modifier(ob, psys);
-      BLI_remlink(&ob->modifiers, pfmd);
+      BKE_modifier_remove_from_list(ob, (ModifierData *)pfmd);
       BKE_modifier_free((ModifierData *)pfmd);
 
       /* clear particle system */
@@ -5010,6 +5010,9 @@ void BKE_fluid_modifier_copy(const struct FluidModifierData *fmd,
     tfds->fractions_distance = fds->fractions_distance;
     tfds->sys_particle_maximum = fds->sys_particle_maximum;
     tfds->simulation_method = fds->simulation_method;
+
+    /* viscosity options */
+    tfds->viscosity_value = fds->viscosity_value;
 
     /* diffusion options*/
     tfds->surface_tension = fds->surface_tension;

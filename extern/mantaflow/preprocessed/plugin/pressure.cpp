@@ -1138,35 +1138,31 @@ void solvePressureSystem(Grid<Real> &rhs,
   // note: the last factor increases the max iterations for 2d, which right now can't use a
   // preconditioner
   GridCgInterface *gcg;
-  if (vel.is3D())
-    gcg = new GridCg<ApplyMatrix>(pressure, rhs, residual, search, flags, tmp, &A0, &Ai, &Aj, &Ak);
-  else
-    gcg = new GridCg<ApplyMatrix2D>(
-        pressure, rhs, residual, search, flags, tmp, &A0, &Ai, &Aj, &Ak);
+  vector<Grid<Real> *> matA{&A0, &Ai, &Aj};
+
+  if (vel.is3D()) {
+    matA.push_back(&Ak);
+    gcg = new GridCg<ApplyMatrix>(pressure, rhs, residual, search, flags, tmp, matA);
+  }
+  else {
+    gcg = new GridCg<ApplyMatrix2D>(pressure, rhs, residual, search, flags, tmp, matA);
+  }
 
   gcg->setAccuracy(cgAccuracy);
   gcg->setUseL2Norm(useL2Norm);
 
-  int maxIter = 0;
+  int maxIter = (int)(cgMaxIterFac * flags.getSize().max()) * (flags.is3D() ? 1 : 4);
 
   Grid<Real> *pca0 = nullptr, *pca1 = nullptr, *pca2 = nullptr, *pca3 = nullptr;
   GridMg *pmg = nullptr;
 
   // optional preconditioning
-  if (preconditioner == PcNone || preconditioner == PcMIC) {
-    maxIter = (int)(cgMaxIterFac * flags.getSize().max()) * (flags.is3D() ? 1 : 4);
-
+  if (preconditioner == PcMIC) {
     pca0 = new Grid<Real>(parent);
     pca1 = new Grid<Real>(parent);
     pca2 = new Grid<Real>(parent);
     pca3 = new Grid<Real>(parent);
-
-    gcg->setICPreconditioner(preconditioner == PcMIC ? GridCgInterface::PC_mICP :
-                                                       GridCgInterface::PC_None,
-                             pca0,
-                             pca1,
-                             pca2,
-                             pca3);
+    gcg->setICPreconditioner(GridCgInterface::PC_mICP, pca0, pca1, pca2, pca3);
   }
   else if (preconditioner == PcMGDynamic || preconditioner == PcMGStatic) {
     maxIter = 100;

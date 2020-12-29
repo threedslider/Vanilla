@@ -848,7 +848,7 @@ void ED_view3d_draw_depth(Depsgraph *depsgraph, ARegion *region, View3D *v3d, bo
   /* get surface depth without bias */
   rv3d->rflag |= RV3D_ZOFFSET_DISABLED;
 
-  /* Needed in cases the view-port isn't already setup. */
+  /* Needed in cases the 3D Viewport isn't already setup. */
   WM_draw_region_viewport_ensure(region, SPACE_VIEW3D);
   WM_draw_region_viewport_bind(region);
 
@@ -956,16 +956,14 @@ float ED_view3d_grid_view_scale(Scene *scene,
   RegionView3D *rv3d = region->regiondata;
   if (!rv3d->is_persp && RV3D_VIEW_IS_AXIS(rv3d->view)) {
     /* Decrease the distance between grid snap points depending on zoom. */
-    /* `0.38` was a value visually obtained in order to get a snap distance
-     * that matches previous versions Blender.*/
-    float min_dist = 16.0f / (region->sizex * rv3d->winmat[0][0]);
+    float dist = 12.0f / (region->sizex * rv3d->winmat[0][0]);
     float grid_steps[STEPS_LEN];
     ED_view3d_grid_steps(scene, v3d, rv3d, grid_steps);
     /* Skip last item, in case the 'mid_dist' is greater than the largest unit. */
     int i;
     for (i = 0; i < ARRAY_SIZE(grid_steps) - 1; i++) {
       grid_scale = grid_steps[i];
-      if (grid_scale > min_dist) {
+      if (grid_scale > dist) {
         break;
       }
     }

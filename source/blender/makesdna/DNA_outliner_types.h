@@ -66,7 +66,9 @@ enum {
   /* Needed because outliner-only elements can be active */
   TSE_ACTIVE = (1 << 9),
   /* TSE_ACTIVE_WALK = (1 << 10), */ /* Unused */
+  TSE_HIGHLIGHTED_ICON = (1 << 11),
   TSE_DRAG_ANY = (TSE_DRAG_INTO | TSE_DRAG_BEFORE | TSE_DRAG_AFTER),
+  TSE_HIGHLIGHTED_ANY = (TSE_HIGHLIGHTED | TSE_HIGHLIGHTED_ICON),
 };
 
 /* TreeStoreElem->types */
@@ -115,6 +117,8 @@ enum {
 #define TSE_SCENE_OBJECTS_BASE 41
 #define TSE_GPENCIL_EFFECT_BASE 42
 #define TSE_GPENCIL_EFFECT 43
+#define TSE_LIBRARY_OVERRIDE_BASE 44
+#define TSE_LIBRARY_OVERRIDE 45
 
 /* Check whether given TreeStoreElem should have a real ID in its ->id member. */
 #define TSE_IS_REAL_ID(_tse) \

@@ -84,6 +84,7 @@
 
 #include "IMB_imbuf_types.h"
 
+#include "ED_fileselect.h"
 #include "ED_numinput.h"
 #include "ED_screen.h"
 #include "ED_undo.h"
@@ -496,7 +497,7 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
           }
           case SPACE_FILE: {
             const SpaceFile *sfile = (SpaceFile *)space_data;
-            const FileSelectParams *params = sfile->params;
+            const FileSelectParams *params = ED_fileselect_get_active_params(sfile);
             TEST_PTR_DATA_TYPE("space_data", RNA_FileSelectParams, ptr, params);
             break;
           }
@@ -3109,13 +3110,13 @@ enum {
 };
 
 static const EnumPropertyItem redraw_timer_type_items[] = {
-    {eRTDrawRegion, "DRAW", 0, "Draw Region", "Draw Region"},
-    {eRTDrawRegionSwap, "DRAW_SWAP", 0, "Draw Region + Swap", "Draw Region and Swap"},
-    {eRTDrawWindow, "DRAW_WIN", 0, "Draw Window", "Draw Window"},
-    {eRTDrawWindowSwap, "DRAW_WIN_SWAP", 0, "Draw Window + Swap", "Draw Window and Swap"},
-    {eRTAnimationStep, "ANIM_STEP", 0, "Anim Step", "Animation Steps"},
-    {eRTAnimationPlay, "ANIM_PLAY", 0, "Anim Play", "Animation Playback"},
-    {eRTUndo, "UNDO", 0, "Undo/Redo", "Undo/Redo"},
+    {eRTDrawRegion, "DRAW", 0, "Draw Region", "Draw region"},
+    {eRTDrawRegionSwap, "DRAW_SWAP", 0, "Draw Region & Swap", "Draw region and swap"},
+    {eRTDrawWindow, "DRAW_WIN", 0, "Draw Window", "Draw window"},
+    {eRTDrawWindowSwap, "DRAW_WIN_SWAP", 0, "Draw Window & Swap", "Draw window and swap"},
+    {eRTAnimationStep, "ANIM_STEP", 0, "Animation Step", "Animation steps"},
+    {eRTAnimationPlay, "ANIM_PLAY", 0, "Animation Play", "Animation playback"},
+    {eRTUndo, "UNDO", 0, "Undo/Redo", "Undo and redo"},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -3617,7 +3618,7 @@ static void WM_OT_stereo3d_set(wmOperatorType *ot)
                          "use_sidebyside_crosseyed",
                          false,
                          "Cross-Eyed",
-                         "Right eye should see left image and vice-versa");
+                         "Right eye should see left image and vice versa");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
 
@@ -3997,7 +3998,7 @@ static const EnumPropertyItem *rna_id_itemf(bool *r_free,
 
         /* Show collection color tag icons in menus. */
         if (id_type == ID_GR) {
-          item_tmp.icon = UI_icon_color_from_collection((Collection *)id);
+          item_tmp.icon = UI_icon_color_from_collection((struct Collection *)id);
         }
 
         RNA_enum_item_add(&item, &totitem, &item_tmp);

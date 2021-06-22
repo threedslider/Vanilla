@@ -207,7 +207,7 @@ static void trace_initialize_job_data(TraceJob *trace_job)
   trace_job->gpd = (bGPdata *)trace_job->ob_gpencil->data;
   trace_job->gpl = BKE_gpencil_layer_active_get(trace_job->gpd);
   if (trace_job->gpl == NULL) {
-    trace_job->gpl = BKE_gpencil_layer_addnew(trace_job->gpd, DATA_("Trace"), true);
+    trace_job->gpl = BKE_gpencil_layer_addnew(trace_job->gpd, DATA_("Trace"), true, false);
   }
 }
 
@@ -257,8 +257,7 @@ static void trace_start_job(void *customdata, short *stop, short *do_update, flo
       ImBuf *ibuf = BKE_image_acquire_ibuf(trace_job->image, iuser, &lock);
       if (ibuf) {
         /* Create frame. */
-        bGPDframe *gpf = BKE_gpencil_layer_frame_get(
-            trace_job->gpl, trace_job->frame_target + i, GP_GETFRAME_ADD_NEW);
+        bGPDframe *gpf = BKE_gpencil_layer_frame_get(trace_job->gpl, i, GP_GETFRAME_ADD_NEW);
         gpencil_trace_image(trace_job, ibuf, gpf);
 
         BKE_image_release_ibuf(trace_job->image, ibuf, lock);

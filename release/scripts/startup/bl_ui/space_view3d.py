@@ -161,9 +161,9 @@ class VIEW3D_HT_tool_header(Header):
         elif mode_string in {'EDIT_MESH', 'PAINT_WEIGHT', 'SCULPT', 'PAINT_VERTEX', 'PAINT_TEXTURE'}:
             # Mesh Modes, Use Mesh Symmetry
             row, sub = row_for_mirror()
-            sub.prop(context.object.data, "use_mirror_x", text="X", toggle=True)
-            sub.prop(context.object.data, "use_mirror_y", text="Y", toggle=True)
-            sub.prop(context.object.data, "use_mirror_z", text="Z", toggle=True)
+            sub.prop(context.object, "use_mesh_mirror_x", text="X", toggle=True)
+            sub.prop(context.object, "use_mesh_mirror_y", text="Y", toggle=True)
+            sub.prop(context.object, "use_mesh_mirror_z", text="Z", toggle=True)
             if mode_string == 'EDIT_MESH':
                 tool_settings = context.tool_settings
                 layout.prop(tool_settings, "use_mesh_automerge", text="")
@@ -654,11 +654,11 @@ class VIEW3D_HT_header(Header):
                 sub = row.row(align=True)
                 sub.prop(tool_settings, "use_gpencil_draw_onback", text="", icon='MOD_OPACITY')
                 sub.separator(factor=0.4)
+                sub.prop(tool_settings, "use_gpencil_automerge_strokes", text="")
+                sub.separator(factor=0.4)
                 sub.prop(tool_settings, "use_gpencil_weight_data_add", text="", icon='WPAINT_HLT')
                 sub.separator(factor=0.4)
                 sub.prop(tool_settings, "use_gpencil_draw_additive", text="", icon='FREEZE')
-                sub.separator(factor=0.4)
-                sub.prop(tool_settings, "use_gpencil_automerge_strokes", text="")
 
             # Select mode for Editing
             if gpd.use_stroke_edit_mode:
@@ -938,7 +938,8 @@ class VIEW3D_MT_transform_base:
         layout.operator("transform.bend", text="Bend")
         layout.operator("transform.push_pull", text="Push/Pull")
 
-        if context.mode != 'OBJECT':
+        if context.mode in {'EDIT_MESH', 'EDIT_ARMATURE', 'EDIT_SURFACE', 'EDIT_CURVE',
+                            'EDIT_LATTICE', 'EDIT_METABALL'}:
             layout.operator("transform.vertex_warp", text="Warp")
             layout.operator_context = 'EXEC_REGION_WIN'
             layout.operator("transform.vertex_random", text="Randomize").offset = 0.1
@@ -1366,7 +1367,7 @@ class VIEW3D_MT_select_object(Menu):
 
         layout.operator_menu_enum("object.select_by_type", "type", text="Select All by Type")
         layout.operator("object.select_camera", text="Select Active Camera")
-        layout.operator("object.select_mirror", text="Mirror Selection")
+        layout.operator("object.select_mirror")
         layout.operator("object.select_random", text="Select Random")
 
         layout.separator()
@@ -1424,7 +1425,7 @@ class VIEW3D_MT_select_pose(Menu):
 
         layout.separator()
 
-        layout.operator("pose.select_mirror", text="Flip Active")
+        layout.operator("pose.select_mirror")
 
         layout.separator()
 
@@ -1597,7 +1598,7 @@ class VIEW3D_MT_select_edit_mesh(Menu):
         layout.separator()
 
         layout.operator("mesh.select_axis", text="Side of Active")
-        layout.operator("mesh.select_mirror", text="Mirror Selection")
+        layout.operator("mesh.select_mirror")
 
 
 class VIEW3D_MT_select_edit_curve(Menu):
@@ -1784,7 +1785,7 @@ class VIEW3D_MT_select_edit_armature(Menu):
 
         layout.separator()
 
-        layout.operator("armature.select_mirror", text="Mirror").extend = False
+        layout.operator("armature.select_mirror")
 
         layout.separator()
 
@@ -2313,6 +2314,7 @@ class VIEW3D_MT_object_animation(Menu):
 
         layout.operator("nla.bake", text="Bake Action...")
         layout.operator("gpencil.bake_mesh_animation", text="Bake Mesh to Grease Pencil...")
+        layout.operator("gpencil.bake_grease_pencil_animation", text="Bake Object Transform to Grease Pencil...")
 
 
 class VIEW3D_MT_object_rigid_body(Menu):
@@ -3038,6 +3040,11 @@ class VIEW3D_MT_sculpt(Menu):
 
         layout.operator("sculpt.optimize")
 
+        layout.separator()
+
+        props = layout.operator("object.transfer_mode", text="Transfer Sculpt Mode")
+        props.use_eyedropper = True
+
 
 class VIEW3D_MT_mask(Menu):
     bl_label = "Mask"
@@ -3090,19 +3097,15 @@ class VIEW3D_MT_mask(Menu):
 
         layout.separator()
 
-        props = layout.operator("sculpt.mask_expand", text="Expand Mask by Topology")
-        props.use_normals = False
-        props.keep_previous_mask = False
+        props = layout.operator("sculpt.expand", text="Expand Mask by Topology")
+        props.target = 'MASK'
+        props.falloff_type = 'GEODESIC'
         props.invert = True
-        props.smooth_iterations = 2
-        props.create_face_set = False
 
-        props = layout.operator("sculpt.mask_expand", text="Expand Mask by Curvature")
-        props.use_normals = True
-        props.keep_previous_mask = True
+        props = layout.operator("sculpt.expand", text="Expand Mask by Normals")
+        props.target = 'MASK'
+        props.falloff_type = 'NORMALS'
         props.invert = False
-        props.smooth_iterations = 0
-        props.create_face_set = False
 
         layout.separator()
 
@@ -3120,6 +3123,11 @@ class VIEW3D_MT_mask(Menu):
         layout.separator()
 
         props = layout.operator("sculpt.dirty_mask", text='Dirty Mask')
+
+        layout.separator()
+
+        layout.menu("VIEW3D_MT_random_mask", text="Random Mask")
+
 
 
 class VIEW3D_MT_face_sets(Menu):
@@ -3139,7 +3147,7 @@ class VIEW3D_MT_face_sets(Menu):
 
         layout.separator()
 
-        layout.menu("VIEW3D_MT_face_sets_init", text="Init Face Sets")
+        layout.menu("VIEW3D_MT_face_sets_init", text="Initialize Face Sets")
 
         layout.separator()
 
@@ -3148,6 +3156,20 @@ class VIEW3D_MT_face_sets(Menu):
 
         op = layout.operator("sculpt.face_set_edit", text='Shrink Face Set')
         op.mode = 'SHRINK'
+
+        layout.separator()
+
+        props = layout.operator("sculpt.expand", text="Expand Face Set by Topology")
+        props.target = 'FACE_SETS'
+        props.falloff_type = 'GEODESIC'
+        props.invert = False
+        props.use_modify_active = False
+
+        props = layout.operator("sculpt.expand", text="Expand Active Face Set")
+        props.target = 'FACE_SETS'
+        props.falloff_type = 'BOUNDARY_FACE_SET'
+        props.invert = False
+        props.use_modify_active = True
 
         layout.separator()
 
@@ -3221,6 +3243,21 @@ class VIEW3D_MT_face_sets_init(Menu):
         op = layout.operator("sculpt.face_sets_init", text='By Face Maps')
         op.mode = 'FACE_MAPS'
 
+
+class VIEW3D_MT_random_mask(Menu):
+    bl_label = "Random Mask"
+
+    def draw(self, _context):
+        layout = self.layout
+
+        op = layout.operator("sculpt.mask_init", text='Per Vertex')
+        op.mode = 'RANDOM_PER_VERTEX'
+
+        op = layout.operator("sculpt.mask_init", text='Per Face Set')
+        op.mode = 'RANDOM_PER_FACE_SET'
+
+        op = layout.operator("sculpt.mask_init", text='Per Loose Part')
+        op.mode = 'RANDOM_PER_LOOSE_PART'
 
 class VIEW3D_MT_particle(Menu):
     bl_label = "Particle"
@@ -3690,6 +3727,8 @@ class VIEW3D_MT_edit_mesh_context_menu(Menu):
 
         layout = self.layout
 
+        with_freestyle = bpy.app.build_options.freestyle
+
         layout.operator_context = 'INVOKE_REGION_WIN'
 
         # If nothing is selected
@@ -3755,8 +3794,6 @@ class VIEW3D_MT_edit_mesh_context_menu(Menu):
             col.operator("mesh.delete", text="Delete Vertices").type = 'VERT'
 
         if is_edge_mode:
-            render = context.scene.render
-
             col = row.column(align=True)
             col.label(text="Edge Context Menu", icon='EDGESEL')
             col.separator()
@@ -3809,7 +3846,7 @@ class VIEW3D_MT_edit_mesh_context_menu(Menu):
             col.operator("mesh.mark_sharp")
             col.operator("mesh.mark_sharp", text="Clear Sharp").clear = True
 
-            if render.use_freestyle:
+            if with_freestyle:
                 col.separator()
 
                 col.operator("mesh.mark_freestyle_edge").clear = False
@@ -3978,41 +4015,6 @@ class VIEW3D_MT_edit_mesh_vertices(Menu):
         layout.separator()
 
         layout.operator("object.vertex_parent_set")
-
-
-class VIEW3D_MT_edit_mesh_edges_data(Menu):
-    bl_label = "Edge Data"
-
-    def draw(self, context):
-        layout = self.layout
-
-        render = context.scene.render
-
-        layout.operator_context = 'INVOKE_REGION_WIN'
-
-        layout.operator("transform.edge_crease")
-        layout.operator("transform.edge_bevelweight")
-
-        layout.separator()
-
-        layout.operator("mesh.mark_seam").clear = False
-        layout.operator("mesh.mark_seam", text="Clear Seam").clear = True
-
-        layout.separator()
-
-        layout.operator("mesh.mark_sharp")
-        layout.operator("mesh.mark_sharp", text="Clear Sharp").clear = True
-
-        layout.operator("mesh.mark_sharp", text="Mark Sharp from Vertices").use_verts = True
-        props = layout.operator("mesh.mark_sharp", text="Clear Sharp from Vertices")
-        props.use_verts = True
-        props.clear = True
-
-        if render.use_freestyle:
-            layout.separator()
-
-            layout.operator("mesh.mark_freestyle_edge").clear = False
-            layout.operator("mesh.mark_freestyle_edge", text="Clear Freestyle Edge").clear = True
 
 
 class VIEW3D_MT_edit_mesh_edges(Menu):
@@ -4926,28 +4928,6 @@ class VIEW3D_MT_assign_material(Menu):
                                 icon='LAYER_ACTIVE' if mat == mat_active else 'BLANK1').material = mat.name
 
 
-class VIEW3D_MT_gpencil_copy_layer(Menu):
-    bl_label = "Copy Layer to Object"
-
-    def draw(self, context):
-        layout = self.layout
-        view_layer = context.view_layer
-        obact = context.active_object
-        gpl = context.active_gpencil_layer
-
-        done = False
-        if gpl is not None:
-            for ob in view_layer.objects:
-                if ob.type == 'GPENCIL' and ob != obact:
-                    layout.operator("gpencil.layer_duplicate_object", text=ob.name).object = ob.name
-                    done = True
-
-            if done is False:
-                layout.label(text="No destination object", icon='ERROR')
-        else:
-            layout.label(text="No layer to copy", icon='ERROR')
-
-
 class VIEW3D_MT_edit_gpencil(Menu):
     bl_label = "Grease Pencil"
 
@@ -4984,7 +4964,7 @@ class VIEW3D_MT_edit_gpencil(Menu):
 
         layout.menu("VIEW3D_MT_edit_gpencil_showhide")
 
-        layout.operator_menu_enum("gpencil.stroke_separate", "mode")
+        layout.operator_menu_enum("gpencil.stroke_separate", "mode", text="Separate")
         layout.menu("GPENCIL_MT_cleanup")
 
         layout.separator()
@@ -5013,7 +4993,7 @@ class VIEW3D_MT_edit_gpencil_stroke(Menu):
         layout.menu("GPENCIL_MT_move_to_layer")
         layout.menu("VIEW3D_MT_assign_material")
         layout.operator("gpencil.set_active_material", text="Set as Active Material")
-        layout.operator_menu_enum("gpencil.stroke_arrange", "direction", text="Arrange Strokes")
+        layout.operator_menu_enum("gpencil.stroke_arrange", "direction", text="Arrange")
 
         layout.separator()
 
@@ -5024,7 +5004,11 @@ class VIEW3D_MT_edit_gpencil_stroke(Menu):
         layout.operator("gpencil.stroke_cyclical_set", text="Toggle Cyclic").type = 'TOGGLE'
         layout.operator_menu_enum("gpencil.stroke_caps_set", text="Toggle Caps", property="type")
         layout.operator("gpencil.stroke_flip", text="Switch Direction")
-        layout.prop(settings, "use_scale_thickness")
+        layout.prop(settings, "use_scale_thickness", text="Scale Thickness")
+
+        layout.separator()
+        layout.operator("gpencil.stroke_normalize", text="Normalize Thickness").mode = 'THICKNESS'
+        layout.operator("gpencil.stroke_normalize", text="Normalize Opacity").mode = 'OPACITY'
 
         layout.separator()
         layout.operator("gpencil.reset_transform_fill", text="Reset Fill Transform")
@@ -5036,15 +5020,15 @@ class VIEW3D_MT_edit_gpencil_point(Menu):
     def draw(self, _context):
         layout = self.layout
 
-        layout.operator("gpencil.extrude_move", text="Extrude Points")
+        layout.operator("gpencil.extrude_move", text="Extrude")
 
         layout.separator()
 
-        layout.operator("gpencil.stroke_smooth", text="Smooth Points").only_selected = True
+        layout.operator("gpencil.stroke_smooth", text="Smooth").only_selected = True
 
         layout.separator()
 
-        layout.operator("gpencil.stroke_merge", text="Merge Points")
+        layout.operator("gpencil.stroke_merge", text="Merge")
 
         # TODO: add new RIP operator
 
@@ -6161,10 +6145,13 @@ class VIEW3D_PT_overlay_geometry(Panel):
         sub.prop(overlay, "wireframe_opacity", text="Opacity")
 
         row = col.row(align=True)
-        if context.mode not in {
-                'EDIT_ARMATURE', 'POSE', 'OBJECT',
-                'PAINT_GPENCIL', 'VERTEX_GPENCIL', 'WEIGHT_GPENCIL', 'SCULPT_GPENCIL', 'EDIT_GPENCIL',
-        }:
+
+        # These properties should be always available in the UI for all modes
+        # other than Object.
+        # Even when the Fade Inactive Geometry overlay is not affecting the
+        # current active object depending on its mode, it will always affect
+        # the rest of the scene.
+        if context.mode != 'OBJECT':
             row.prop(overlay, "show_fade_inactive", text="")
             sub = row.row()
             sub.active = overlay.show_fade_inactive
@@ -6983,7 +6970,7 @@ class VIEW3D_PT_context_properties(Panel):
 
         if member:
             # Draw with no edit button
-            rna_prop_ui.draw(self.layout, context, member, object, False)
+            rna_prop_ui.draw(self.layout, context, member, object, use_edit=False)
 
 
 # Grease Pencil Object - Multiframe falloff tools
@@ -7048,12 +7035,12 @@ class VIEW3D_MT_gpencil_edit_context_menu(Menu):
 
             col.separator()
 
-            col.operator("gpencil.extrude_move", text="Extrude Points")
+            col.operator("gpencil.extrude_move", text="Extrude")
 
             col.separator()
 
             # Deform Operators
-            col.operator("gpencil.stroke_smooth", text="Smooth Points").only_selected = True
+            col.operator("gpencil.stroke_smooth", text="Smooth").only_selected = True
             col.operator("transform.bend", text="Bend")
             col.operator("transform.shear", text="Shear")
             col.operator("transform.tosphere", text="To Sphere")
@@ -7061,8 +7048,8 @@ class VIEW3D_MT_gpencil_edit_context_menu(Menu):
 
             col.separator()
 
-            col.menu("VIEW3D_MT_mirror", text="Mirror Points")
-            col.menu("GPENCIL_MT_snap", text="Snap Points")
+            col.menu("VIEW3D_MT_mirror", text="Mirror")
+            col.menu("GPENCIL_MT_snap", text="Snap")
 
             col.separator()
 
@@ -7075,15 +7062,15 @@ class VIEW3D_MT_gpencil_edit_context_menu(Menu):
             col.separator()
 
             # Removal Operators
-            col.operator("gpencil.stroke_merge", text="Merge Points")
+            col.operator("gpencil.stroke_merge", text="Merge")
             col.operator("gpencil.stroke_merge_by_distance").use_unselected = False
             col.operator("gpencil.stroke_split", text="Split")
             col.operator("gpencil.stroke_separate", text="Separate").mode = 'POINT'
 
             col.separator()
 
-            col.operator("gpencil.delete", text="Delete Points").type = 'POINTS'
-            col.operator("gpencil.dissolve", text="Dissolve Points").type = 'POINTS'
+            col.operator("gpencil.delete", text="Delete").type = 'POINTS'
+            col.operator("gpencil.dissolve", text="Dissolve").type = 'POINTS'
             col.operator("gpencil.dissolve", text="Dissolve Between").type = 'BETWEEN'
             col.operator("gpencil.dissolve", text="Dissolve Unselected").type = 'UNSELECT'
 
@@ -7100,7 +7087,7 @@ class VIEW3D_MT_gpencil_edit_context_menu(Menu):
 
             col.separator()
 
-            col.operator("gpencil.stroke_smooth", text="Smooth Stroke").only_selected = False
+            col.operator("gpencil.stroke_smooth", text="Smooth").only_selected = False
             col.operator("transform.transform", text="Shrink/Fatten").mode = 'GPENCIL_SHRINKFATTEN'
 
             col.separator()
@@ -7109,12 +7096,12 @@ class VIEW3D_MT_gpencil_edit_context_menu(Menu):
             col.menu("GPENCIL_MT_move_to_layer")
             col.menu("VIEW3D_MT_assign_material")
             col.operator("gpencil.set_active_material", text="Set as Active Material")
-            col.operator_menu_enum("gpencil.stroke_arrange", "direction", text="Arrange Strokes")
+            col.operator_menu_enum("gpencil.stroke_arrange", "direction", text="Arrange")
 
             col.separator()
 
-            col.menu("VIEW3D_MT_mirror", text="Mirror Stroke")
-            col.menu("VIEW3D_MT_snap", text="Snap Stroke")
+            col.menu("VIEW3D_MT_mirror", text="Mirror")
+            col.menu("VIEW3D_MT_snap", text="Snap")
 
             col.separator()
 
@@ -7134,11 +7121,11 @@ class VIEW3D_MT_gpencil_edit_context_menu(Menu):
 
             col.separator()
 
-            col.operator("gpencil.delete", text="Delete Strokes").type = 'STROKES'
+            col.operator("gpencil.delete", text="Delete").type = 'STROKES'
 
             col.separator()
 
-            col.operator("gpencil.reproject", text="Reproject Strokes")
+            col.operator("gpencil.reproject", text="Reproject")
 
 
 def draw_gpencil_layer_active(context, layout):
@@ -7563,6 +7550,7 @@ classes = (
     VIEW3D_MT_mask,
     VIEW3D_MT_face_sets,
     VIEW3D_MT_face_sets_init,
+    VIEW3D_MT_random_mask,
     VIEW3D_MT_particle,
     VIEW3D_MT_particle_context_menu,
     VIEW3D_MT_particle_showhide,
@@ -7589,7 +7577,6 @@ classes = (
     VIEW3D_MT_edit_mesh_extrude,
     VIEW3D_MT_edit_mesh_vertices,
     VIEW3D_MT_edit_mesh_edges,
-    VIEW3D_MT_edit_mesh_edges_data,
     VIEW3D_MT_edit_mesh_faces,
     VIEW3D_MT_edit_mesh_faces_data,
     VIEW3D_MT_edit_mesh_normals,
@@ -7614,7 +7601,6 @@ classes = (
     VIEW3D_MT_weight_gpencil,
     VIEW3D_MT_gpencil_animation,
     VIEW3D_MT_gpencil_simplify,
-    VIEW3D_MT_gpencil_copy_layer,
     VIEW3D_MT_gpencil_autoweights,
     VIEW3D_MT_gpencil_edit_context_menu,
     VIEW3D_MT_edit_curve,

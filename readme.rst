@@ -19,7 +19,11 @@ motion tracking and video editing and game engine.
 License
 -------
 
+<<<<<<< HEAD
 Vanilla as a whole is licensed under the GNU Public License, Version 3.
+=======
+Blender as a whole is licensed under the GNU General Public License, Version 3.
+>>>>>>> dbc054bb8818b51c8148a9e245cd75e0198515a0
 Individual files may have a different, but compatible license.
 
 See `blender.org/about/license <https://www.blender.org/about/license>`__ for details.

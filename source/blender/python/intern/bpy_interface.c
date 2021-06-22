@@ -45,6 +45,7 @@
 #include "bpy_capi_utils.h"
 #include "bpy_intern_string.h"
 #include "bpy_path.h"
+#include "bpy_props.h"
 #include "bpy_rna.h"
 #include "bpy_traceback.h"
 
@@ -153,8 +154,8 @@ void bpy_context_clear(bContext *UNUSED(C), const PyGILState_STATE *gilstate)
     fprintf(stderr, "ERROR: Python context internal state bug. this should not happen!\n");
   }
   else if (py_call_level == 0) {
-    /* XXX - Calling classes currently wont store the context :\,
-     * cant set NULL because of this. but this is very flakey still. */
+    /* XXX - Calling classes currently won't store the context :\,
+     * can't set NULL because of this. but this is very flakey still. */
 #if 0
     BPY_context_set(NULL);
 #endif
@@ -164,6 +165,14 @@ void bpy_context_clear(bContext *UNUSED(C), const PyGILState_STATE *gilstate)
     bpy_timer_count++;
 #endif
   }
+}
+
+static void bpy_context_end(bContext *C)
+{
+  if (UNLIKELY(C == NULL)) {
+    return;
+  }
+  CTX_wm_operator_poll_msg_clear(C);
 }
 
 /**
@@ -391,7 +400,7 @@ void BPY_python_start(bContext *C, int argc, const char **argv)
 
     /* Needed for Python's initialization for portable Python installations.
      * We could use #Py_SetPath, but this overrides Python's internal logic
-     * for calculating it's own module search paths.
+     * for calculating its own module search paths.
      *
      * `sys.executable` is overwritten after initialization to the Python binary. */
     {
@@ -522,6 +531,12 @@ void BPY_python_end(void)
 
   /* finalizing, no need to grab the state, except when we are a module */
   gilstate = PyGILState_Ensure();
+
+  /* Clear Python values in the context so freeing the context after Python exits doesn't crash. */
+  bpy_context_end(BPY_context_get());
+
+  /* Decrement user counts of all callback functions. */
+  BPY_rna_props_clear_all();
 
   /* free other python data. */
   pyrna_free_types();
@@ -810,7 +825,7 @@ static void dealloc_obj_dealloc(PyObject *self)
 {
   bpy_module_delay_init(((dealloc_obj *)self)->mod);
 
-  /* Note, for subclassed PyObjects we cant just call PyObject_DEL() directly or it will crash */
+  /* Note, for subclassed PyObjects we can't just call PyObject_DEL() directly or it will crash */
   dealloc_obj_Type.tp_free(self);
 }
 
@@ -823,7 +838,7 @@ PyMODINIT_FUNC PyInit_bpy(void)
   /* Problem:
    * 1) this init function is expected to have a private member defined - 'md_def'
    *    but this is only set for C defined modules (not py packages)
-   *    so we cant return 'bpy_package_py' as is.
+   *    so we can't return 'bpy_package_py' as is.
    *
    * 2) there is a 'bpy' C module for python to load which is basically all of blender,
    *    and there is scripts/bpy/__init__.py,

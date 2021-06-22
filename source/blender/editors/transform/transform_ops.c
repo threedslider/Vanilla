@@ -163,14 +163,13 @@ const EnumPropertyItem rna_enum_transform_mode_types[] = {
 static int select_orientation_exec(bContext *C, wmOperator *op)
 {
   Scene *scene = CTX_data_scene(C);
-  View3D *v3d = CTX_wm_view3d(C);
 
   int orientation = RNA_enum_get(op->ptr, "orientation");
 
   BKE_scene_orientation_slot_set_index(&scene->orientation_slots[SCE_ORIENT_DEFAULT], orientation);
 
   WM_event_add_notifier(C, NC_SCENE | ND_TOOLSETTINGS, NULL);
-  WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, v3d);
+  WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, NULL);
 
   struct wmMsgBus *mbus = CTX_wm_message_bus(C);
   WM_msg_publish_rna_prop(mbus, &scene->id, scene, TransformOrientationSlot, type);
@@ -286,7 +285,7 @@ static int create_orientation_exec(bContext *C, wmOperator *op)
     WM_event_add_notifier(C, NC_SCENE | NA_EDITED, scene);
   }
 
-  WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, v3d);
+  WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, NULL);
 
   return OPERATOR_FINISHED;
 }
@@ -520,10 +519,11 @@ static int transform_invoke(bContext *C, wmOperator *op, const wmEvent *event)
   /* add temp handler */
   WM_event_add_modal_handler(C, op);
 
-  op->flag |= OP_IS_MODAL_GRAB_CURSOR; /* XXX maybe we want this with the gizmo only? */
-
   /* Use when modal input has some transformation to begin with. */
   TransInfo *t = op->customdata;
+  if ((t->flag & T_NO_CURSOR_WRAP) == 0) {
+    op->flag |= OP_IS_MODAL_GRAB_CURSOR; /* XXX maybe we want this with the gizmo only? */
+  }
   if (UNLIKELY(!is_zero_v4(t->values_modal_offset))) {
     transformApply(C, t);
   }
@@ -539,7 +539,7 @@ static bool transform_poll_property(const bContext *UNUSED(C),
 
   /* Orientation/Constraints. */
   {
-    /* Hide orientation axis if no constraints are set, since it wont be used. */
+    /* Hide orientation axis if no constraints are set, since it won't be used. */
     PropertyRNA *prop_con = RNA_struct_find_property(op->ptr, "orient_type");
     if (!ELEM(prop_con, NULL, prop)) {
       if (STRPREFIX(prop_id, "constraint")) {

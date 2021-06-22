@@ -357,7 +357,6 @@ extern "C" int GHOST_HACK_getFirstFile(char buf[FIRSTFILEBUFLG])
   }
 }
 
-/* clang-format off */
 #pragma mark Cocoa objects
 
 /**
@@ -499,8 +498,6 @@ extern "C" int GHOST_HACK_getFirstFile(char buf[FIRSTFILEBUFLG])
 @end
 
 #pragma mark initialization/finalization
-
-/* clang-format on */
 
 GHOST_SystemCocoa::GHOST_SystemCocoa()
 {
@@ -1714,7 +1711,7 @@ GHOST_TSuccess GHOST_SystemCocoa::handleMouseEvent(void *eventPtr)
         dx = [event scrollingDeltaX];
         dy = [event scrollingDeltaY];
 
-        /* However, wacom tablet (intuos5) needs old deltas,
+        /* However, Wacom tablet (intuos5) needs old deltas,
          * it then has momentum and phase at zero. */
         if (phase == NSEventPhaseNone && momentumPhase == NSEventPhaseNone) {
           dx = [event deltaX];

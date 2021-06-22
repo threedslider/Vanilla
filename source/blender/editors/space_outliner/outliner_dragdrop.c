@@ -26,28 +26,21 @@
 #include "MEM_guardedalloc.h"
 
 #include "DNA_collection_types.h"
-#include "DNA_constraint_types.h"
 #include "DNA_material_types.h"
-#include "DNA_modifier_types.h"
 #include "DNA_object_types.h"
 #include "DNA_space_types.h"
 
 #include "BLI_listbase.h"
-#include "BLI_string.h"
 
 #include "BLT_translation.h"
 
 #include "BKE_collection.h"
-#include "BKE_constraint.h"
 #include "BKE_context.h"
 #include "BKE_layer.h"
-#include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_material.h"
 #include "BKE_object.h"
 #include "BKE_report.h"
-#include "BKE_scene.h"
-#include "BKE_shader_fx.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_build.h"
@@ -57,12 +50,9 @@
 #include "ED_screen.h"
 
 #include "UI_interface.h"
-#include "UI_resources.h"
 #include "UI_view2d.h"
 
 #include "RNA_access.h"
-#include "RNA_define.h"
-#include "RNA_enum_types.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -647,7 +637,7 @@ static int material_drop_invoke(bContext *C, wmOperator *UNUSED(op), const wmEve
   BKE_object_material_assign(bmain, ob, ma, ob->totcol + 1, BKE_MAT_ASSIGN_USERPREF);
 
   WM_event_add_notifier(C, NC_OBJECT | ND_OB_SHADING, ob);
-  WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, CTX_wm_view3d(C));
+  WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, NULL);
   WM_event_add_notifier(C, NC_MATERIAL | ND_SHADING_LINKS, ma);
 
   return OPERATOR_FINISHED;
@@ -828,12 +818,7 @@ static bool datastack_drop_are_types_valid(StackDropData *drop_data)
   switch (drop_data->drag_tselem->type) {
     case TSE_MODIFIER_BASE:
     case TSE_MODIFIER:
-      if (ob_parent->type == OB_GPENCIL) {
-        return ob_dst->type == OB_GPENCIL;
-      }
-      else if (ob_parent->type != OB_GPENCIL) {
-        return ob_dst->type != OB_GPENCIL;
-      }
+      return (ob_parent->type == OB_GPENCIL) == (ob_dst->type == OB_GPENCIL);
       break;
     case TSE_CONSTRAINT_BASE:
     case TSE_CONSTRAINT:
@@ -1018,7 +1003,7 @@ static void datastack_drop_reorder(bContext *C, ReportList *reports, StackDropDa
             drag_te, drop_te, insert_type, &ob->greasepencil_modifiers);
         ED_object_gpencil_modifier_move_to_index(reports, ob, drop_data->drag_directdata, index);
       }
-      else if (ob->type != OB_GPENCIL) {
+      else {
         index = outliner_get_insert_index(drag_te, drop_te, insert_type, &ob->modifiers);
         ED_object_modifier_move_to_index(reports, ob, drop_data->drag_directdata, index);
       }
@@ -1114,8 +1099,6 @@ static bool collection_drop_init(bContext *C,
                                  const wmEvent *event,
                                  CollectionDrop *data)
 {
-  SpaceOutliner *space_outliner = CTX_wm_space_outliner(C);
-
   /* Get collection to drop into. */
   TreeElementInsertType insert_type;
   TreeElement *te = outliner_drop_insert_collection_find(C, event, &insert_type);
@@ -1150,7 +1133,7 @@ static bool collection_drop_init(bContext *C,
   /* Get collection to drag out of. */
   ID *parent = drag_id->from_parent;
   Collection *from_collection = collection_parent_from_ID(parent);
-  if (event->ctrl || space_outliner->outlinevis == SO_SCENES) {
+  if (event->ctrl) {
     from_collection = NULL;
   }
 
@@ -1382,7 +1365,7 @@ static int outliner_item_drag_drop_invoke(bContext *C,
     wmOperatorType *ot = WM_operatortype_find("VIEW2D_OT_edge_pan", true);
     PointerRNA op_ptr;
     WM_operator_properties_create_ptr(&op_ptr, ot);
-    RNA_int_set(&op_ptr, "outside_padding", OUTLINER_DRAG_SCOLL_OUTSIDE_PAD);
+    RNA_float_set(&op_ptr, "outside_padding", OUTLINER_DRAG_SCOLL_OUTSIDE_PAD);
     WM_operator_name_call_ptr(C, ot, WM_OP_INVOKE_DEFAULT, &op_ptr);
     WM_operator_properties_free(&op_ptr);
   }

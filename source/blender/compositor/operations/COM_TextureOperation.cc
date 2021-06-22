@@ -25,25 +25,27 @@
 #include "BLI_listbase.h"
 #include "BLI_threads.h"
 
+namespace blender::compositor {
+
 TextureBaseOperation::TextureBaseOperation()
 {
-  this->addInputSocket(COM_DT_VECTOR);  // offset
-  this->addInputSocket(COM_DT_VECTOR);  // size
+  this->addInputSocket(DataType::Vector);  // offset
+  this->addInputSocket(DataType::Vector);  // size
   this->m_texture = nullptr;
   this->m_inputSize = nullptr;
   this->m_inputOffset = nullptr;
   this->m_rd = nullptr;
   this->m_pool = nullptr;
   this->m_sceneColorManage = false;
-  setComplex(true);
+  flags.complex = true;
 }
 TextureOperation::TextureOperation() : TextureBaseOperation()
 {
-  this->addOutputSocket(COM_DT_COLOR);
+  this->addOutputSocket(DataType::Color);
 }
 TextureAlphaOperation::TextureAlphaOperation() : TextureBaseOperation()
 {
-  this->addOutputSocket(COM_DT_VALUE);
+  this->addOutputSocket(DataType::Value);
 }
 
 void TextureBaseOperation::initExecution()
@@ -73,15 +75,31 @@ void TextureBaseOperation::deinitExecution()
 void TextureBaseOperation::determineResolution(unsigned int resolution[2],
                                                unsigned int preferredResolution[2])
 {
-  if (preferredResolution[0] == 0 || preferredResolution[1] == 0) {
-    int width = this->m_rd->xsch * this->m_rd->size / 100;
-    int height = this->m_rd->ysch * this->m_rd->size / 100;
-    resolution[0] = width;
-    resolution[1] = height;
-  }
-  else {
-    resolution[0] = preferredResolution[0];
-    resolution[1] = preferredResolution[1];
+  switch (execution_model_) {
+    case eExecutionModel::Tiled: {
+      if (preferredResolution[0] == 0 || preferredResolution[1] == 0) {
+        int width = this->m_rd->xsch * this->m_rd->size / 100;
+        int height = this->m_rd->ysch * this->m_rd->size / 100;
+        resolution[0] = width;
+        resolution[1] = height;
+      }
+      else {
+        resolution[0] = preferredResolution[0];
+        resolution[1] = preferredResolution[1];
+      }
+      break;
+    }
+    case eExecutionModel::FullFrame: {
+      /* Determine inputs resolutions. */
+      unsigned int temp[2];
+      NodeOperation::determineResolution(temp, preferredResolution);
+
+      /* We don't use inputs resolutions because they are only used as parameters, not image data.
+       */
+      resolution[0] = preferredResolution[0];
+      resolution[1] = preferredResolution[1];
+      break;
+    }
   }
 }
 
@@ -155,3 +173,5 @@ void TextureBaseOperation::executePixelSampled(float output[4],
     output[0] = output[1] = output[2] = output[3];
   }
 }
+
+}  // namespace blender::compositor

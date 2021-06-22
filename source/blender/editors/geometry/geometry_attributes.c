@@ -52,7 +52,15 @@ static const EnumPropertyItem *geometry_attribute_domain_itemf(bContext *C,
                                                                PropertyRNA *UNUSED(prop),
                                                                bool *r_free)
 {
+  if (C == NULL) {
+    return DummyRNA_NULL_items;
+  }
+
   Object *ob = ED_object_context(C);
+  if (ob == NULL) {
+    return DummyRNA_NULL_items;
+  }
+
   return rna_enum_attribute_domain_itemf(ob->data, r_free);
 }
 

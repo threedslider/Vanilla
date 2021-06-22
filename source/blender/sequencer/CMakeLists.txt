@@ -74,10 +74,12 @@ set(SRC
   intern/prefetch.h
   intern/proxy.c
   intern/proxy.h
+  intern/proxy_job.c
   intern/render.c
   intern/render.h
   intern/sequencer.c
   intern/sequencer.h
+  intern/sequence_lookup.c
   intern/sound.c
   intern/strip_add.c
   intern/strip_edit.c

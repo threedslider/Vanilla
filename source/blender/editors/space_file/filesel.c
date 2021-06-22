@@ -120,6 +120,7 @@ static void fileselect_ensure_updated_asset_params(SpaceFile *sfile)
     asset_params->base_params.details_flags = U_default.file_space_data.details_flags;
     asset_params->asset_library.type = FILE_ASSET_LIBRARY_LOCAL;
     asset_params->asset_library.custom_library_index = -1;
+    asset_params->import_type = FILE_ASSET_IMPORT_APPEND;
   }
 
   FileSelectParams *base_params = &asset_params->base_params;
@@ -639,7 +640,7 @@ int ED_fileselect_layout_numfiles(FileLayout *layout, ARegion *region)
    *
    * - *_item: size of each (row|col), (including padding)
    * - *_view: (x|y) size of the view.
-   * - *_over: extra pixels, to take into account, when the fit isnt exact
+   * - *_over: extra pixels, to take into account, when the fit isn't exact
    *   (needed since you may see the end of the previous column and the beginning of the next).
    *
    * Could be more clever and take scrolling into account,

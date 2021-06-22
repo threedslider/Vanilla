@@ -20,91 +20,65 @@
 
 #include "MEM_guardedalloc.h"
 
-static unsigned int determine_num_channels(DataType datatype)
+namespace blender::compositor {
+
+MemoryBuffer::MemoryBuffer(MemoryProxy *memoryProxy, const rcti &rect, MemoryBufferState state)
 {
-  switch (datatype) {
-    case COM_DT_VALUE:
-      return COM_NUM_CHANNELS_VALUE;
-    case COM_DT_VECTOR:
-      return COM_NUM_CHANNELS_VECTOR;
-    case COM_DT_COLOR:
-    default:
-      return COM_NUM_CHANNELS_COLOR;
+  m_rect = rect;
+  this->m_is_a_single_elem = false;
+  this->m_memoryProxy = memoryProxy;
+  this->m_num_channels = COM_data_type_num_channels(memoryProxy->getDataType());
+  this->m_buffer = (float *)MEM_mallocN_aligned(
+      sizeof(float) * buffer_len() * this->m_num_channels, 16, "COM_MemoryBuffer");
+  this->m_state = state;
+  this->m_datatype = memoryProxy->getDataType();
+
+  set_strides();
+}
+
+MemoryBuffer::MemoryBuffer(DataType dataType, const rcti &rect, bool is_a_single_elem)
+{
+  m_rect = rect;
+  this->m_is_a_single_elem = is_a_single_elem;
+  this->m_memoryProxy = nullptr;
+  this->m_num_channels = COM_data_type_num_channels(dataType);
+  this->m_buffer = (float *)MEM_mallocN_aligned(
+      sizeof(float) * buffer_len() * this->m_num_channels, 16, "COM_MemoryBuffer");
+  this->m_state = MemoryBufferState::Temporary;
+  this->m_datatype = dataType;
+
+  set_strides();
+}
+
+MemoryBuffer::MemoryBuffer(const MemoryBuffer &src)
+    : MemoryBuffer(src.m_datatype, src.m_rect, false)
+{
+  m_memoryProxy = src.m_memoryProxy;
+  /* src may be single elem buffer */
+  fill_from(src);
+}
+
+void MemoryBuffer::set_strides()
+{
+  if (m_is_a_single_elem) {
+    this->elem_stride = 0;
+    this->row_stride = 0;
+  }
+  else {
+    this->elem_stride = m_num_channels;
+    this->row_stride = getWidth() * m_num_channels;
   }
 }
 
-unsigned int MemoryBuffer::determineBufferSize()
-{
-  return getWidth() * getHeight();
-}
-
-int MemoryBuffer::getWidth() const
-{
-  return this->m_width;
-}
-int MemoryBuffer::getHeight() const
-{
-  return this->m_height;
-}
-
-MemoryBuffer::MemoryBuffer(MemoryProxy *memoryProxy, unsigned int chunkNumber, rcti *rect)
-{
-  BLI_rcti_init(&this->m_rect, rect->xmin, rect->xmax, rect->ymin, rect->ymax);
-  this->m_width = BLI_rcti_size_x(&this->m_rect);
-  this->m_height = BLI_rcti_size_y(&this->m_rect);
-  this->m_memoryProxy = memoryProxy;
-  this->m_chunkNumber = chunkNumber;
-  this->m_num_channels = determine_num_channels(memoryProxy->getDataType());
-  this->m_buffer = (float *)MEM_mallocN_aligned(
-      sizeof(float) * determineBufferSize() * this->m_num_channels, 16, "COM_MemoryBuffer");
-  this->m_state = COM_MB_ALLOCATED;
-  this->m_datatype = memoryProxy->getDataType();
-}
-
-MemoryBuffer::MemoryBuffer(MemoryProxy *memoryProxy, rcti *rect)
-{
-  BLI_rcti_init(&this->m_rect, rect->xmin, rect->xmax, rect->ymin, rect->ymax);
-  this->m_width = BLI_rcti_size_x(&this->m_rect);
-  this->m_height = BLI_rcti_size_y(&this->m_rect);
-  this->m_memoryProxy = memoryProxy;
-  this->m_chunkNumber = -1;
-  this->m_num_channels = determine_num_channels(memoryProxy->getDataType());
-  this->m_buffer = (float *)MEM_mallocN_aligned(
-      sizeof(float) * determineBufferSize() * this->m_num_channels, 16, "COM_MemoryBuffer");
-  this->m_state = COM_MB_TEMPORARILY;
-  this->m_datatype = memoryProxy->getDataType();
-}
-MemoryBuffer::MemoryBuffer(DataType dataType, rcti *rect)
-{
-  BLI_rcti_init(&this->m_rect, rect->xmin, rect->xmax, rect->ymin, rect->ymax);
-  this->m_width = BLI_rcti_size_x(&this->m_rect);
-  this->m_height = BLI_rcti_size_y(&this->m_rect);
-  this->m_height = this->m_rect.ymax - this->m_rect.ymin;
-  this->m_memoryProxy = nullptr;
-  this->m_chunkNumber = -1;
-  this->m_num_channels = determine_num_channels(dataType);
-  this->m_buffer = (float *)MEM_mallocN_aligned(
-      sizeof(float) * determineBufferSize() * this->m_num_channels, 16, "COM_MemoryBuffer");
-  this->m_state = COM_MB_TEMPORARILY;
-  this->m_datatype = dataType;
-}
-MemoryBuffer *MemoryBuffer::duplicate()
-{
-  MemoryBuffer *result = new MemoryBuffer(this->m_memoryProxy, &this->m_rect);
-  memcpy(result->m_buffer,
-         this->m_buffer,
-         this->determineBufferSize() * this->m_num_channels * sizeof(float));
-  return result;
-}
 void MemoryBuffer::clear()
 {
-  memset(this->m_buffer, 0, this->determineBufferSize() * this->m_num_channels * sizeof(float));
+  memset(m_buffer, 0, buffer_len() * m_num_channels * sizeof(float));
 }
 
-float MemoryBuffer::getMaximumValue()
+float MemoryBuffer::get_max_value() const
 {
   float result = this->m_buffer[0];
-  const unsigned int size = this->determineBufferSize();
+  const unsigned int size = this->buffer_len();
   unsigned int i;
 
   const float *fp_src = this->m_buffer;
@@ -119,19 +93,17 @@ float MemoryBuffer::getMaximumValue()
   return result;
 }
 
-float MemoryBuffer::getMaximumValue(rcti *rect)
+float MemoryBuffer::get_max_value(const rcti &rect) const
 {
   rcti rect_clamp;
 
   /* first clamp the rect by the bounds or we get un-initialized values */
-  BLI_rcti_isect(rect, &this->m_rect, &rect_clamp);
+  BLI_rcti_isect(&rect, &this->m_rect, &rect_clamp);
 
   if (!BLI_rcti_is_empty(&rect_clamp)) {
-    MemoryBuffer *temp = new MemoryBuffer(this->m_datatype, &rect_clamp);
-    temp->copyContentFrom(this);
-    float result = temp->getMaximumValue();
-    delete temp;
-    return result;
+    MemoryBuffer temp_buffer(this->m_datatype, rect_clamp);
+    temp_buffer.fill_from(*this);
+    return temp_buffer.get_max_value();
   }
 
   BLI_assert(0);
@@ -146,28 +118,23 @@ MemoryBuffer::~MemoryBuffer()
   }
 }
 
-void MemoryBuffer::copyContentFrom(MemoryBuffer *otherBuffer)
+void MemoryBuffer::fill_from(const MemoryBuffer &src)
 {
-  if (!otherBuffer) {
-    BLI_assert(0);
-    return;
-  }
+  BLI_assert(!this->is_a_single_elem());
+
   unsigned int otherY;
-  unsigned int minX = MAX2(this->m_rect.xmin, otherBuffer->m_rect.xmin);
-  unsigned int maxX = MIN2(this->m_rect.xmax, otherBuffer->m_rect.xmax);
-  unsigned int minY = MAX2(this->m_rect.ymin, otherBuffer->m_rect.ymin);
-  unsigned int maxY = MIN2(this->m_rect.ymax, otherBuffer->m_rect.ymax);
+  unsigned int minX = MAX2(this->m_rect.xmin, src.m_rect.xmin);
+  unsigned int maxX = MIN2(this->m_rect.xmax, src.m_rect.xmax);
+  unsigned int minY = MAX2(this->m_rect.ymin, src.m_rect.ymin);
+  unsigned int maxY = MIN2(this->m_rect.ymax, src.m_rect.ymax);
   int offset;
   int otherOffset;
 
   for (otherY = minY; otherY < maxY; otherY++) {
-    otherOffset = ((otherY - otherBuffer->m_rect.ymin) * otherBuffer->m_width + minX -
-                   otherBuffer->m_rect.xmin) *
-                  this->m_num_channels;
-    offset = ((otherY - this->m_rect.ymin) * this->m_width + minX - this->m_rect.xmin) *
-             this->m_num_channels;
+    otherOffset = src.get_coords_offset(minX, otherY);
+    offset = this->get_coords_offset(minX, otherY);
     memcpy(&this->m_buffer[offset],
-           &otherBuffer->m_buffer[otherOffset],
+           &src.m_buffer[otherOffset],
            (maxX - minX) * this->m_num_channels * sizeof(float));
   }
 }
@@ -176,8 +143,7 @@ void MemoryBuffer::writePixel(int x, int y, const float color[4])
 {
   if (x >= this->m_rect.xmin && x < this->m_rect.xmax && y >= this->m_rect.ymin &&
       y < this->m_rect.ymax) {
-    const int offset = (this->m_width * (y - this->m_rect.ymin) + x - this->m_rect.xmin) *
-                       this->m_num_channels;
+    const int offset = get_coords_offset(x, y);
     memcpy(&this->m_buffer[offset], color, sizeof(float) * this->m_num_channels);
   }
 }
@@ -186,8 +152,7 @@ void MemoryBuffer::addPixel(int x, int y, const float color[4])
 {
   if (x >= this->m_rect.xmin && x < this->m_rect.xmax && y >= this->m_rect.ymin &&
       y < this->m_rect.ymax) {
-    const int offset = (this->m_width * (y - this->m_rect.ymin) + x - this->m_rect.xmin) *
-                       this->m_num_channels;
+    const int offset = get_coords_offset(x, y);
     float *dst = &this->m_buffer[offset];
     const float *src = color;
     for (int i = 0; i < this->m_num_channels; i++, dst++, src++) {
@@ -204,24 +169,31 @@ static void read_ewa_pixel_sampled(void *userdata, int x, int y, float result[4]
 
 void MemoryBuffer::readEWA(float *result, const float uv[2], const float derivatives[2][2])
 {
-  BLI_assert(this->m_datatype == COM_DT_COLOR);
-  float inv_width = 1.0f / (float)this->getWidth(), inv_height = 1.0f / (float)this->getHeight();
-  /* TODO(sergey): Render pipeline uses normalized coordinates and derivatives,
-   * but compositor uses pixel space. For now let's just divide the values and
-   * switch compositor to normalized space for EWA later.
-   */
-  float uv_normal[2] = {uv[0] * inv_width, uv[1] * inv_height};
-  float du_normal[2] = {derivatives[0][0] * inv_width, derivatives[0][1] * inv_height};
-  float dv_normal[2] = {derivatives[1][0] * inv_width, derivatives[1][1] * inv_height};
+  if (m_is_a_single_elem) {
+    memcpy(result, m_buffer, sizeof(float) * this->m_num_channels);
+  }
+  else {
+    BLI_assert(this->m_datatype == DataType::Color);
+    float inv_width = 1.0f / (float)this->getWidth(), inv_height = 1.0f / (float)this->getHeight();
+    /* TODO(sergey): Render pipeline uses normalized coordinates and derivatives,
+     * but compositor uses pixel space. For now let's just divide the values and
+     * switch compositor to normalized space for EWA later.
+     */
+    float uv_normal[2] = {uv[0] * inv_width, uv[1] * inv_height};
+    float du_normal[2] = {derivatives[0][0] * inv_width, derivatives[0][1] * inv_height};
+    float dv_normal[2] = {derivatives[1][0] * inv_width, derivatives[1][1] * inv_height};
 
-  BLI_ewa_filter(this->getWidth(),
-                 this->getHeight(),
-                 false,
-                 true,
-                 uv_normal,
-                 du_normal,
-                 dv_normal,
-                 read_ewa_pixel_sampled,
-                 this,
-                 result);
+    BLI_ewa_filter(this->getWidth(),
+                   this->getHeight(),
+                   false,
+                   true,
+                   uv_normal,
+                   du_normal,
+                   dv_normal,
+                   read_ewa_pixel_sampled,
+                   this,
+                   result);
+  }
 }
+
+}  // namespace blender::compositor

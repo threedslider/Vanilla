@@ -20,6 +20,8 @@
 
 #include <stdlib.h>
 
+#include <CLG_log.h>
+
 #include "DNA_ID.h"
 
 #include "BLI_utildefines.h"
@@ -79,7 +81,16 @@ const EnumPropertyItem rna_enum_property_subtype_items[] = {
     {PROP_PERCENTAGE, "PERCENTAGE", 0, "Percentage", ""},
     {PROP_FACTOR, "FACTOR", 0, "Factor", ""},
     {PROP_ANGLE, "ANGLE", 0, "Angle", ""},
-    {PROP_TIME, "TIME", 0, "Time", ""},
+    {PROP_TIME,
+     "TIME",
+     0,
+     "Time (Scene Relative)",
+     "Time specified in frames, converted to seconds based on scene frame rate"},
+    {PROP_TIME_ABSOLUTE,
+     "TIME_ABSOLUTE",
+     0,
+     "Time (Absolute)",
+     "Time specified in seconds, independent of the scene"},
     {PROP_DISTANCE, "DISTANCE", 0, "Distance", ""},
     {PROP_DISTANCE_CAMERA, "DISTANCE_CAMERA", 0, "Camera Distance", ""},
     {PROP_POWER, "POWER", 0, "Power", ""},
@@ -131,6 +142,8 @@ const EnumPropertyItem rna_enum_property_unit_items[] = {
 
 #  include "BKE_idprop.h"
 #  include "BKE_lib_override.h"
+
+static CLG_LogRef LOG_COMPARE_OVERRIDE = {"rna.rna_compare_override"};
 
 /* Struct */
 
@@ -1238,6 +1251,8 @@ static bool rna_property_override_diff_propptr_validate_diffing(PointerRNA *prop
 
 /* Used for both Pointer and Collection properties. */
 static int rna_property_override_diff_propptr(Main *bmain,
+                                              ID *owner_id_a,
+                                              ID *owner_id_b,
                                               PointerRNA *propptr_a,
                                               PointerRNA *propptr_b,
                                               eRNACompareMode mode,
@@ -1358,6 +1373,17 @@ static int rna_property_override_diff_propptr(Main *bmain,
               /* In case one of the pointer is NULL and not the other, we consider that the
                * override is not matching its reference anymore. */
               opop->flag &= ~IDOVERRIDE_LIBRARY_FLAG_IDPOINTER_MATCH_REFERENCE;
+            }
+            else if ((owner_id_a->tag & LIB_TAG_LIB_OVERRIDE_NEED_RESYNC) != 0 ||
+                     (owner_id_b->tag & LIB_TAG_LIB_OVERRIDE_NEED_RESYNC) != 0) {
+              /* In case one of the owner of the checked property is tagged as needing resync, do
+               * not change the 'match reference' status of its ID pointer properties overrides,
+               * since many non-matching ones are likely due to missing resync. */
+              CLOG_INFO(&LOG_COMPARE_OVERRIDE,
+                        4,
+                        "Not checking matching ID pointer properties, since owner %s is tagged as "
+                        "needing resync.\n",
+                        id_a->name);
             }
             else if (id_a->override_library != NULL && id_a->override_library->reference == id_b) {
               opop->flag |= IDOVERRIDE_LIBRARY_FLAG_IDPOINTER_MATCH_REFERENCE;
@@ -1778,6 +1804,8 @@ int rna_property_override_diff_default(Main *bmain,
         PointerRNA propptr_a = RNA_property_pointer_get(ptr_a, rawprop_a);
         PointerRNA propptr_b = RNA_property_pointer_get(ptr_b, rawprop_b);
         return rna_property_override_diff_propptr(bmain,
+                                                  ptr_a->owner_id,
+                                                  ptr_b->owner_id,
                                                   &propptr_a,
                                                   &propptr_b,
                                                   mode,
@@ -1934,6 +1962,8 @@ int rna_property_override_diff_default(Main *bmain,
           else if (is_id || is_valid_for_diffing) {
             if (equals || do_create) {
               const int eq = rna_property_override_diff_propptr(bmain,
+                                                                ptr_a->owner_id,
+                                                                ptr_b->owner_id,
                                                                 &iter_a.ptr,
                                                                 &iter_b.ptr,
                                                                 mode,

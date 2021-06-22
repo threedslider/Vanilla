@@ -99,7 +99,7 @@ set(DEFSRC
 )
 
 if(WITH_EXPERIMENTAL_FEATURES)
-  add_definitions(-DWITH_GEOMETRY_NODES)
+  add_definitions(-DWITH_SIMULATION_DATABLOCK)
   add_definitions(-DWITH_POINT_CLOUD)
   add_definitions(-DWITH_HAIR_NODES)
   list(APPEND DEFSRC
@@ -298,8 +298,20 @@ if(WITH_OPENAL)
   add_definitions(-DWITH_OPENAL)
 endif()
 
+if(WITH_COREAUDIO)
+  add_definitions(-DWITH_COREAUDIO)
+endif()
+
 if(WITH_JACK)
   add_definitions(-DWITH_JACK)
+endif()
+
+if(WITH_PULSEAUDIO)
+  add_definitions(-DWITH_PULSEAUDIO)
+endif()
+
+if(WITH_WASAPI)
+  add_definitions(-DWITH_WASAPI)
 endif()
 
 if(WITH_OPENCOLLADA)
@@ -443,6 +455,7 @@ set(LIB
   bf_editor_undo
 )
 
+add_definitions(${GL_DEFINITIONS})
 
 blender_add_lib(bf_rna "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
 

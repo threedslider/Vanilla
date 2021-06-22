@@ -132,17 +132,21 @@ struct wmWindowManager;
 extern "C" {
 #endif
 
+typedef void (*wmGenericUserDataFreeFn)(void *data);
+
 typedef struct wmGenericUserData {
   void *data;
   /** When NULL, use #MEM_freeN. */
-  void (*free_fn)(void *data);
+  wmGenericUserDataFreeFn free_fn;
   bool use_free;
 } wmGenericUserData;
 
+typedef void (*wmGenericCallbackFn)(struct bContext *C, void *user_data);
+
 typedef struct wmGenericCallback {
-  void (*exec)(struct bContext *C, void *user_data);
+  wmGenericCallbackFn exec;
   void *user_data;
-  void (*free_user_data)(void *user_data);
+  wmGenericUserDataFreeFn free_user_data;
 } wmGenericCallback;
 
 /* ************** wmOperatorType ************************ */
@@ -287,6 +291,9 @@ typedef struct wmNotifier {
 #define NC_TEXT (12 << 24)
 #define NC_WORLD (13 << 24)
 #define NC_ANIMATION (14 << 24)
+/* When passing a space as reference data with this (e.g. `WM_event_add_notifier(..., space)`),
+ * the notifier will only be sent to this space. That avoids unnecessary updates for unrelated
+ * spaces. */
 #define NC_SPACE (15 << 24)
 #define NC_GEOM (16 << 24)
 #define NC_NODE (17 << 24)
@@ -367,6 +374,8 @@ typedef struct wmNotifier {
 #define ND_DRAW_RENDER_VIEWPORT \
   (31 << 16) /* for camera & sequencer viewport update, also /w NC_SCENE */
 #define ND_SHADERFX (32 << 16)
+/* For updating motion paths in 3dview. */
+#define ND_DRAW_ANIMVIZ (33 << 16)
 
 /* NC_MATERIAL Material */
 #define ND_SHADING (30 << 16)
@@ -675,6 +684,25 @@ typedef struct wmNDOFMotionData {
 } wmNDOFMotionData;
 #endif /* WITH_INPUT_NDOF */
 
+#ifdef WITH_XR_OPENXR
+/* Similar to GHOST_XrPose. */
+typedef struct wmXrPose {
+  float position[3];
+  /* Blender convention (w, x, y, z) */
+  float orientation_quat[4];
+} wmXrPose;
+
+typedef struct wmXrActionState {
+  union {
+    bool state_boolean;
+    float state_float;
+    float state_vector2f[2];
+    wmXrPose state_pose;
+  };
+  int type; /* eXrActionType */
+} wmXrActionState;
+#endif
+
 /** Timer flags. */
 typedef enum {
   /** Do not attempt to free customdata pointer even if non-NULL. */
@@ -892,6 +920,7 @@ typedef struct wmDragAsset {
   /* Always freed. */
   const char *path;
   int id_type;
+  int import_type; /* eFileAssetImportType */
 } wmDragAsset;
 
 typedef struct wmDrag {

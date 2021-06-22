@@ -709,8 +709,8 @@ static void do_versions_area_ensure_tool_region(Main *bmain,
 static void do_version_bones_split_bbone_scale(ListBase *lb)
 {
   LISTBASE_FOREACH (Bone *, bone, lb) {
-    bone->scale_in_y = bone->scale_in_x;
-    bone->scale_out_y = bone->scale_out_x;
+    bone->scale_in_z = bone->scale_in_x;
+    bone->scale_out_z = bone->scale_out_x;
 
     do_version_bones_split_bbone_scale(&bone->childbase);
   }
@@ -1785,7 +1785,7 @@ void do_versions_after_linking_280(Main *bmain, ReportList *UNUSED(reports))
 static void do_versions_seq_unique_name_all_strips(Scene *sce, ListBase *seqbasep)
 {
   for (Sequence *seq = seqbasep->first; seq != NULL; seq = seq->next) {
-    SEQ_sequence_base_unique_name_recursive(&sce->ed->seqbase, seq);
+    SEQ_sequence_base_unique_name_recursive(sce, &sce->ed->seqbase, seq);
     if (seq->seqbase.first != NULL) {
       do_versions_seq_unique_name_all_strips(sce, &seq->seqbase);
     }
@@ -1814,7 +1814,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 280, 1)) {
-    if (!DNA_struct_elem_find(fd->filesdna, "Light", "float", "bleedexp")) {
+    if (!DNA_struct_elem_find(fd->filesdna, "Lamp", "float", "bleedexp")) {
       for (Light *la = bmain->lights.first; la; la = la->id.next) {
         la->bleedexp = 2.5f;
       }
@@ -1840,7 +1840,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 280, 2)) {
-    if (!DNA_struct_elem_find(fd->filesdna, "Light", "float", "cascade_max_dist")) {
+    if (!DNA_struct_elem_find(fd->filesdna, "Lamp", "float", "cascade_max_dist")) {
       for (Light *la = bmain->lights.first; la; la = la->id.next) {
         la->cascade_max_dist = 1000.0f;
         la->cascade_count = 4;
@@ -1849,7 +1849,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
-    if (!DNA_struct_elem_find(fd->filesdna, "Light", "float", "contact_dist")) {
+    if (!DNA_struct_elem_find(fd->filesdna, "Lamp", "float", "contact_dist")) {
       for (Light *la = bmain->lights.first; la; la = la->id.next) {
         la->contact_dist = 0.2f;
         la->contact_bias = 0.03f;
@@ -2185,7 +2185,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
 
   if (!MAIN_VERSION_ATLEAST(bmain, 280, 13)) {
     /* Initialize specular factor. */
-    if (!DNA_struct_elem_find(fd->filesdna, "Light", "float", "spec_fac")) {
+    if (!DNA_struct_elem_find(fd->filesdna, "Lamp", "float", "spec_fac")) {
       for (Light *la = bmain->lights.first; la; la = la->id.next) {
         la->spec_fac = 1.0f;
       }
@@ -3135,7 +3135,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
-    if (!DNA_struct_elem_find(fd->filesdna, "Light", "float", "att_dist")) {
+    if (!DNA_struct_elem_find(fd->filesdna, "Lamp", "float", "att_dist")) {
       for (Light *la = bmain->lights.first; la; la = la->id.next) {
         la->att_dist = la->clipend;
       }
@@ -3172,7 +3172,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
           bool is_blend = false;
 
           {
-            char tool = tool_init;
+            char tool;
             switch (tool_init) {
               case PAINT_BLEND_MIX:
                 tool = VPAINT_TOOL_DRAW;
@@ -3969,8 +3969,8 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
       LISTBASE_FOREACH (Object *, ob, &bmain->objects) {
         if (ob->pose) {
           LISTBASE_FOREACH (bPoseChannel *, pchan, &ob->pose->chanbase) {
-            pchan->scale_in_y = pchan->scale_in_x;
-            pchan->scale_out_y = pchan->scale_out_x;
+            pchan->scale_in_z = pchan->scale_in_x;
+            pchan->scale_out_z = pchan->scale_out_x;
           }
         }
       }
@@ -4051,7 +4051,7 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
     }
 
     /* Initializes sun lights with the new angular diameter property */
-    if (!DNA_struct_elem_find(fd->filesdna, "Light", "float", "sun_angle")) {
+    if (!DNA_struct_elem_find(fd->filesdna, "Lamp", "float", "sun_angle")) {
       LISTBASE_FOREACH (Light *, light, &bmain->lights) {
         light->sun_angle = 2.0f * atanf(light->area_size);
       }

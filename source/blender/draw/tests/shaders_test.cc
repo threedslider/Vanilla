@@ -2,34 +2,29 @@
 
 #include "testing/testing.h"
 
-#include "intern/draw_manager_testing.h"
+#include "draw_testing.hh"
 
 #include "GPU_context.h"
+#include "GPU_index_buffer.h"
 #include "GPU_init_exit.h"
 #include "GPU_shader.h"
-#include "gpu_testing.hh"
+#include "GPU_texture.h"
+#include "GPU_vertex_buffer.h"
+
+#include "intern/draw_manager_testing.h"
 
 #include "engines/eevee/eevee_private.h"
 #include "engines/gpencil/gpencil_engine.h"
 #include "engines/image/image_private.h"
 #include "engines/overlay/overlay_private.h"
 #include "engines/workbench/workbench_private.h"
+#include "intern/draw_shader.h"
 
 namespace blender::draw {
-
-/* Base class for draw test cases. It will setup and tear down the GPU part around each test. */
-class DrawTest : public blender::gpu::GPUTest {
-  void SetUp() override
-  {
-    GPUTest::SetUp();
-    DRW_draw_state_init_gtests(GPU_SHADER_CFG_DEFAULT);
-  }
-};
 
 TEST_F(DrawTest, workbench_glsl_shaders)
 {
   workbench_shader_library_ensure();
-  DRW_draw_state_init_gtests(GPU_SHADER_CFG_DEFAULT);
 
   const int MAX_WPD = 6;
   WORKBENCH_PrivateData wpds[MAX_WPD];
@@ -288,7 +283,6 @@ TEST_F(DrawTest, overlay_glsl_shaders)
 
 TEST_F(DrawTest, eevee_glsl_shaders_static)
 {
-  EEVEE_shaders_lightprobe_shaders_init();
   EEVEE_shaders_material_shaders_init();
 
   EXPECT_NE(EEVEE_shaders_bloom_blit_get(false), nullptr);
@@ -340,7 +334,6 @@ TEST_F(DrawTest, eevee_glsl_shaders_static)
   EXPECT_NE(EEVEE_shaders_effect_motion_blur_velocity_tiles_sh_get(), nullptr);
   EXPECT_NE(EEVEE_shaders_effect_motion_blur_velocity_tiles_expand_sh_get(), nullptr);
   EXPECT_NE(EEVEE_shaders_effect_ambient_occlusion_sh_get(), nullptr);
-  EXPECT_NE(EEVEE_shaders_effect_ambient_occlusion_layer_sh_get(), nullptr);
   EXPECT_NE(EEVEE_shaders_effect_ambient_occlusion_debug_sh_get(), nullptr);
   EXPECT_NE(EEVEE_shaders_ggx_lut_sh_get(), nullptr);
   EXPECT_NE(EEVEE_shaders_ggx_refraction_lut_sh_get(), nullptr);
@@ -373,11 +366,25 @@ TEST_F(DrawTest, eevee_glsl_shaders_static)
   EXPECT_NE(EEVEE_shaders_velocity_resolve_sh_get(), nullptr);
   EXPECT_NE(EEVEE_shaders_taa_resolve_sh_get(EFFECT_TAA), nullptr);
   EXPECT_NE(EEVEE_shaders_taa_resolve_sh_get(EFFECT_TAA_REPROJECT), nullptr);
-  for (int index = 0; index < SSR_MAX_SHADER; index++) {
-    EEVEE_SSRShaderOptions ssr_option = (EEVEE_SSRShaderOptions)index;
-    EXPECT_NE(EEVEE_shaders_effect_screen_raytrace_sh_get(ssr_option), nullptr);
-  }
+  EXPECT_NE(EEVEE_shaders_effect_reflection_trace_sh_get(), nullptr);
+  EXPECT_NE(EEVEE_shaders_effect_reflection_resolve_sh_get(), nullptr);
   EEVEE_shaders_free();
+}
+
+static void test_draw_shaders(eParticleRefineShaderType sh_type)
+{
+  DRW_shaders_free();
+  EXPECT_NE(DRW_shader_hair_refine_get(PART_REFINE_CATMULL_ROM, sh_type), nullptr);
+  DRW_shaders_free();
+}
+
+TEST_F(DrawTest, draw_glsl_shaders)
+{
+#ifndef __APPLE__
+  test_draw_shaders(PART_REFINE_SHADER_TRANSFORM_FEEDBACK);
+  test_draw_shaders(PART_REFINE_SHADER_COMPUTE);
+#endif
+  test_draw_shaders(PART_REFINE_SHADER_TRANSFORM_FEEDBACK_WORKAROUND);
 }
 
 }  // namespace blender::draw

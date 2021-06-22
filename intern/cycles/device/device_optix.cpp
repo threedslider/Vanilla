@@ -193,12 +193,15 @@ class OptiXDevice : public CUDADevice {
   device_only_memory<unsigned char> denoiser_state;
   int denoiser_input_passes = 0;
 
+  vector<device_only_memory<char>> delayed_free_bvh_memory;
+  thread_mutex delayed_free_bvh_mutex;
+
  public:
   OptiXDevice(DeviceInfo &info_, Stats &stats_, Profiler &profiler_, bool background_)
       : CUDADevice(info_, stats_, profiler_, background_),
         sbt_data(this, "__sbt", MEM_READ_ONLY),
-        launch_params(this, "__params"),
-        denoiser_state(this, "__denoiser_state")
+        launch_params(this, "__params", false),
+        denoiser_state(this, "__denoiser_state", true)
   {
     // Store number of CUDA streams in device info
     info.cpu_threads = DebugFlags().optix.cuda_streams;
@@ -257,6 +260,8 @@ class OptiXDevice : public CUDADevice {
 
     // Make CUDA context current
     const CUDAContextScope scope(cuContext);
+
+    free_bvh_memory_delayed();
 
     sbt_data.free();
     texture_info.free();
@@ -362,7 +367,7 @@ class OptiXDevice : public CUDADevice {
       }
     }
 
-    OptixModuleCompileOptions module_options;
+    OptixModuleCompileOptions module_options = {};
     module_options.maxRegisterCount = 0;  // Do not set an explicit register limit
 #  ifdef WITH_CYCLES_DEBUG
     module_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
@@ -377,7 +382,7 @@ class OptiXDevice : public CUDADevice {
     module_options.numBoundValues = 0;
 #  endif
 
-    OptixPipelineCompileOptions pipeline_options;
+    OptixPipelineCompileOptions pipeline_options = {};
     // Default to no motion blur and two-level graph, since it is the fastest option
     pipeline_options.usesMotionBlur = false;
     pipeline_options.traversableGraphFlags =
@@ -477,7 +482,7 @@ class OptiXDevice : public CUDADevice {
 
 #  if OPTIX_ABI_VERSION >= 36
       if (DebugFlags().optix.curves_api && requested_features.use_hair_thick) {
-        OptixBuiltinISOptions builtin_options;
+        OptixBuiltinISOptions builtin_options = {};
         builtin_options.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE;
         builtin_options.usesMotionBlur = false;
 
@@ -571,7 +576,7 @@ class OptiXDevice : public CUDADevice {
                          stack_size[PG_HITS_MOTION].cssIS + stack_size[PG_HITS_MOTION].cssAH);
 #  endif
 
-    OptixPipelineLinkOptions link_options;
+    OptixPipelineLinkOptions link_options = {};
     link_options.maxTraceDepth = 1;
 #  ifdef WITH_CYCLES_DEBUG
     link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
@@ -721,7 +726,11 @@ class OptiXDevice : public CUDADevice {
       }
     }
     else if (task.type == DeviceTask::SHADER) {
-      launch_shader_eval(task, thread_index);
+      // CUDA kernels are used when doing baking
+      if (optix_module == NULL)
+        CUDADevice::shader(task);
+      else
+        launch_shader_eval(task, thread_index);
     }
     else if (task.type == DeviceTask::DENOISE_BUFFER) {
       // Set up a single tile that covers the whole task and denoise it
@@ -878,8 +887,8 @@ class OptiXDevice : public CUDADevice {
       device_ptr input_ptr = rtile.buffer + pixel_offset;
 
       // Copy tile data into a common buffer if necessary
-      device_only_memory<float> input(this, "denoiser input");
-      device_vector<TileInfo> tile_info_mem(this, "denoiser tile info", MEM_READ_WRITE);
+      device_only_memory<float> input(this, "denoiser input", true);
+      device_vector<TileInfo> tile_info_mem(this, "denoiser tile info", MEM_READ_ONLY);
 
       bool contiguous_memory = true;
       for (int i = 0; i < RenderTileNeighbors::SIZE; i++) {
@@ -924,7 +933,7 @@ class OptiXDevice : public CUDADevice {
       }
 
 #  if OPTIX_DENOISER_NO_PIXEL_STRIDE
-      device_only_memory<float> input_rgb(this, "denoiser input rgb");
+      device_only_memory<float> input_rgb(this, "denoiser input rgb", true);
       input_rgb.alloc_to_device(rect_size.x * rect_size.y * 3 * task.denoising.input_passes);
 
       void *input_args[] = {&input_rgb.device_pointer,
@@ -953,16 +962,23 @@ class OptiXDevice : public CUDADevice {
         }
 
         // Create OptiX denoiser handle on demand when it is first used
-        OptixDenoiserOptions denoiser_options;
+        OptixDenoiserOptions denoiser_options = {};
         assert(task.denoising.input_passes >= 1 && task.denoising.input_passes <= 3);
+#  if OPTIX_ABI_VERSION >= 47
+        denoiser_options.guideAlbedo = task.denoising.input_passes >= 2;
+        denoiser_options.guideNormal = task.denoising.input_passes >= 3;
+        check_result_optix_ret(optixDenoiserCreate(
+            context, OPTIX_DENOISER_MODEL_KIND_HDR, &denoiser_options, &denoiser));
+#  else
         denoiser_options.inputKind = static_cast<OptixDenoiserInputKind>(
             OPTIX_DENOISER_INPUT_RGB + (task.denoising.input_passes - 1));
-#  if OPTIX_ABI_VERSION < 28
+#    if OPTIX_ABI_VERSION < 28
         denoiser_options.pixelFormat = OPTIX_PIXEL_FORMAT_FLOAT3;
-#  endif
+#    endif
         check_result_optix_ret(optixDenoiserCreate(context, &denoiser_options, &denoiser));
         check_result_optix_ret(
             optixDenoiserSetModel(denoiser, OPTIX_DENOISER_MODEL_KIND_HDR, NULL, 0));
+#  endif
 
         // OptiX denoiser handle was created with the requested number of input passes
         denoiser_input_passes = task.denoising.input_passes;
@@ -1032,10 +1048,34 @@ class OptiXDevice : public CUDADevice {
 #  endif
       output_layers[0].format = OPTIX_PIXEL_FORMAT_FLOAT3;
 
+#  if OPTIX_ABI_VERSION >= 47
+      OptixDenoiserLayer image_layers = {};
+      image_layers.input = input_layers[0];
+      image_layers.output = output_layers[0];
+
+      OptixDenoiserGuideLayer guide_layers = {};
+      guide_layers.albedo = input_layers[1];
+      guide_layers.normal = input_layers[2];
+#  endif
+
       // Finally run denonising
       OptixDenoiserParams params = {};  // All parameters are disabled/zero
+#  if OPTIX_ABI_VERSION >= 47
       check_result_optix_ret(optixDenoiserInvoke(denoiser,
-                                                 0,
+                                                 NULL,
+                                                 &params,
+                                                 denoiser_state.device_pointer,
+                                                 scratch_offset,
+                                                 &guide_layers,
+                                                 &image_layers,
+                                                 1,
+                                                 overlap_offset.x,
+                                                 overlap_offset.y,
+                                                 denoiser_state.device_pointer + scratch_offset,
+                                                 scratch_size));
+#  else
+      check_result_optix_ret(optixDenoiserInvoke(denoiser,
+                                                 NULL,
                                                  &params,
                                                  denoiser_state.device_pointer,
                                                  scratch_offset,
@@ -1046,6 +1086,7 @@ class OptiXDevice : public CUDADevice {
                                                  output_layers,
                                                  denoiser_state.device_pointer + scratch_offset,
                                                  scratch_size));
+#  endif
 
 #  if OPTIX_DENOISER_NO_PIXEL_STRIDE
       void *output_args[] = {&input_ptr,
@@ -1146,18 +1187,27 @@ class OptiXDevice : public CUDADevice {
                        const OptixBuildInput &build_input,
                        uint16_t num_motion_steps)
   {
+    /* Allocate and build acceleration structures only one at a time, to prevent parallel builds
+     * from running out of memory (since both original and compacted acceleration structure memory
+     * may be allocated at the same time for the duration of this function). The builds would
+     * otherwise happen on the same CUDA stream anyway. */
+    static thread_mutex mutex;
+    thread_scoped_lock lock(mutex);
+
     const CUDAContextScope scope(cuContext);
+
+    const bool use_fast_trace_bvh = (bvh->params.bvh_type == SceneParams::BVH_STATIC);
 
     // Compute memory usage
     OptixAccelBufferSizes sizes = {};
-    OptixAccelBuildOptions options;
+    OptixAccelBuildOptions options = {};
     options.operation = operation;
-    if (background) {
-      // Prefer best performance and lowest memory consumption in background
+    if (use_fast_trace_bvh) {
+      VLOG(2) << "Using fast to trace OptiX BVH";
       options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE | OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
     }
     else {
-      // Prefer fast updates in viewport
+      VLOG(2) << "Using fast to update OptiX BVH";
       options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD | OPTIX_BUILD_FLAG_ALLOW_UPDATE;
     }
 
@@ -1170,11 +1220,12 @@ class OptiXDevice : public CUDADevice {
         optixAccelComputeMemoryUsage(context, &options, &build_input, 1, &sizes));
 
     // Allocate required output buffers
-    device_only_memory<char> temp_mem(this, "optix temp as build mem");
+    device_only_memory<char> temp_mem(this, "optix temp as build mem", true);
     temp_mem.alloc_to_device(align_up(sizes.tempSizeInBytes, 8) + 8);
     if (!temp_mem.device_pointer)
       return false;  // Make sure temporary memory allocation succeeded
 
+    // Acceleration structure memory has to be allocated on the device (not allowed to be on host)
     device_only_memory<char> &out_data = bvh->as_data;
     if (operation == OPTIX_BUILD_OPERATION_BUILD) {
       assert(out_data.device == this);
@@ -1187,7 +1238,7 @@ class OptiXDevice : public CUDADevice {
     }
 
     // Finally build the acceleration structure
-    OptixAccelEmitDesc compacted_size_prop;
+    OptixAccelEmitDesc compacted_size_prop = {};
     compacted_size_prop.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
     // A tiny space was allocated for this property at the end of the temporary buffer above
     // Make sure this pointer is 8-byte aligned
@@ -1204,15 +1255,16 @@ class OptiXDevice : public CUDADevice {
                                            out_data.device_pointer,
                                            sizes.outputSizeInBytes,
                                            &out_handle,
-                                           background ? &compacted_size_prop : NULL,
-                                           background ? 1 : 0));
+                                           use_fast_trace_bvh ? &compacted_size_prop : NULL,
+                                           use_fast_trace_bvh ? 1 : 0));
     bvh->traversable_handle = static_cast<uint64_t>(out_handle);
 
     // Wait for all operations to finish
     check_result_cuda_ret(cuStreamSynchronize(NULL));
 
-    // Compact acceleration structure to save memory (do not do this in viewport for faster builds)
-    if (background) {
+    // Compact acceleration structure to save memory (only if using fast trace as the
+    // OPTIX_BUILD_FLAG_ALLOW_COMPACTION flag is only set in this case).
+    if (use_fast_trace_bvh) {
       uint64_t compacted_size = sizes.outputSizeInBytes;
       check_result_cuda_ret(
           cuMemcpyDtoH(&compacted_size, compacted_size_prop.result, sizeof(compacted_size)));
@@ -1222,7 +1274,7 @@ class OptiXDevice : public CUDADevice {
 
       // There is no point compacting if the size does not change
       if (compacted_size < sizes.outputSizeInBytes) {
-        device_only_memory<char> compacted_data(this, "optix compacted as");
+        device_only_memory<char> compacted_data(this, "optix compacted as", false);
         compacted_data.alloc_to_device(compacted_size);
         if (!compacted_data.device_pointer)
           // Do not compact if memory allocation for compacted acceleration structure fails
@@ -1242,6 +1294,7 @@ class OptiXDevice : public CUDADevice {
 
         std::swap(out_data.device_size, compacted_data.device_size);
         std::swap(out_data.device_pointer, compacted_data.device_pointer);
+        // Original acceleration structure memory is freed when 'compacted_data' goes out of scope
       }
     }
 
@@ -1256,6 +1309,10 @@ class OptiXDevice : public CUDADevice {
       return;
     }
 
+    const bool use_fast_trace_bvh = (bvh->params.bvh_type == SceneParams::BVH_STATIC);
+
+    free_bvh_memory_delayed();
+
     BVHOptiX *const bvh_optix = static_cast<BVHOptiX *>(bvh);
 
     progress.set_substatus("Building OptiX acceleration structure");
@@ -1263,10 +1320,10 @@ class OptiXDevice : public CUDADevice {
     if (!bvh->params.top_level) {
       assert(bvh->objects.size() == 1 && bvh->geometry.size() == 1);
 
-      // Refit is only possible in viewport for now (because AS is built with
-      // OPTIX_BUILD_FLAG_ALLOW_UPDATE only there, see above)
       OptixBuildOperation operation = OPTIX_BUILD_OPERATION_BUILD;
-      if (refit && !background) {
+      /* Refit is only possible when using fast to trace BVH (because AS is built with
+       * OPTIX_BUILD_FLAG_ALLOW_UPDATE only there, see above). */
+      if (refit && !use_fast_trace_bvh) {
         assert(bvh_optix->traversable_handle != 0);
         operation = OPTIX_BUILD_OPERATION_UPDATE;
       }
@@ -1724,6 +1781,24 @@ class OptiXDevice : public CUDADevice {
       }
       tlas_handle = bvh_optix->traversable_handle;
     }
+  }
+
+  void release_optix_bvh(BVH *bvh) override
+  {
+    thread_scoped_lock lock(delayed_free_bvh_mutex);
+    /* Do delayed free of BVH memory, since geometry holding BVH might be deleted
+     * while GPU is still rendering. */
+    BVHOptiX *const bvh_optix = static_cast<BVHOptiX *>(bvh);
+
+    delayed_free_bvh_memory.emplace_back(std::move(bvh_optix->as_data));
+    delayed_free_bvh_memory.emplace_back(std::move(bvh_optix->motion_transform_data));
+    bvh_optix->traversable_handle = 0;
+  }
+
+  void free_bvh_memory_delayed()
+  {
+    thread_scoped_lock lock(delayed_free_bvh_mutex);
+    delayed_free_bvh_memory.free_memory();
   }
 
   void const_copy_to(const char *name, void *host, size_t size) override

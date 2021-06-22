@@ -1349,10 +1349,12 @@ static void join_groups_action_temp(bAction *act)
 
   /* BLI_movelisttolist() doesn't touch first->prev and last->next pointers in its "dst" list.
    * Ensure that after the reshuffling the list is properly terminated. */
-  FCurve *act_fcurves_first = act->curves.first;
-  act_fcurves_first->prev = NULL;
-  FCurve *act_fcurves_last = act->curves.last;
-  act_fcurves_last->next = NULL;
+  if (!BLI_listbase_is_empty(&act->curves)) {
+    FCurve *act_fcurves_first = act->curves.first;
+    act_fcurves_first->prev = NULL;
+    FCurve *act_fcurves_last = act->curves.last;
+    act_fcurves_last->next = NULL;
+  }
 }
 
 /* Change the order of anim-channels within action
@@ -2689,6 +2691,11 @@ static void box_select_anim_channels(bAnimContext *ac, rcti *rect, short selectm
   /* loop over data, doing box select */
   for (ale = anim_data.first; ale; ale = ale->next) {
     float ymin;
+    /* Skip grease pencil datablock. Only use grease pencil layers. */
+    if (ale->type == ANIMTYPE_GPDATABLOCK) {
+      continue;
+    }
+
     if (ac->datatype == ANIMCONT_NLA) {
       ymin = ymax - NLACHANNEL_STEP(snla);
     }

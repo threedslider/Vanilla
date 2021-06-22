@@ -131,8 +131,7 @@ static void mask_flood_fill_task_cb(void *__restrict userdata,
 
   SCULPT_undo_push_node(data->ob, node, SCULPT_UNDO_MASK);
 
-  BKE_pbvh_vertex_iter_begin(data->pbvh, node, vi, PBVH_ITER_UNIQUE)
-  {
+  BKE_pbvh_vertex_iter_begin (data->pbvh, node, vi, PBVH_ITER_UNIQUE) {
     float prevmask = *vi.mask;
     mask_flood_fill_set_elem(vi.mask, mode, value);
     if (prevmask != *vi.mask) {
@@ -757,8 +756,7 @@ static void face_set_gesture_apply_task_cb(void *__restrict userdata,
   PBVHVertexIter vd;
   bool any_updated = false;
 
-  BKE_pbvh_vertex_iter_begin(sgcontext->ss->pbvh, node, vd, PBVH_ITER_UNIQUE)
-  {
+  BKE_pbvh_vertex_iter_begin (sgcontext->ss->pbvh, node, vd, PBVH_ITER_UNIQUE) {
     if (sculpt_gesture_is_vertex_effected(sgcontext, &vd)) {
       SCULPT_vertex_face_set_set(sgcontext->ss, vd.index, face_set_operation->new_face_set_id);
       any_updated = true;
@@ -832,8 +830,7 @@ static void mask_gesture_apply_task_cb(void *__restrict userdata,
   bool any_masked = false;
   bool redraw = false;
 
-  BKE_pbvh_vertex_iter_begin(sgcontext->ss->pbvh, node, vd, PBVH_ITER_UNIQUE)
-  {
+  BKE_pbvh_vertex_iter_begin (sgcontext->ss->pbvh, node, vd, PBVH_ITER_UNIQUE) {
     if (sculpt_gesture_is_vertex_effected(sgcontext, &vd)) {
       float prevmask = *vd.mask;
       if (!any_masked) {
@@ -1242,10 +1239,9 @@ static void sculpt_gesture_apply_trim(SculptGestureContext *sgcontext)
                      }));
 
   const int looptris_tot = poly_to_tri_count(bm->totface, bm->totloop);
-  int tottri;
   BMLoop *(*looptris)[3];
   looptris = MEM_malloc_arrayN(looptris_tot, sizeof(*looptris), __func__);
-  BM_mesh_calc_tessellation_beauty(bm, looptris, &tottri);
+  BM_mesh_calc_tessellation_beauty(bm, looptris);
 
   BMIter iter;
   int i;
@@ -1293,7 +1289,7 @@ static void sculpt_gesture_apply_trim(SculptGestureContext *sgcontext)
         break;
     }
     BM_mesh_boolean(
-        bm, looptris, tottri, bm_face_isect_pair, NULL, 2, true, true, false, boolean_mode);
+        bm, looptris, looptris_tot, bm_face_isect_pair, NULL, 2, true, true, false, boolean_mode);
   }
 
   MEM_freeN(looptris);
@@ -1415,8 +1411,7 @@ static void project_line_gesture_apply_task_cb(void *__restrict userdata,
 
   SCULPT_undo_push_node(sgcontext->vc.obact, node, SCULPT_UNDO_COORDS);
 
-  BKE_pbvh_vertex_iter_begin(sgcontext->ss->pbvh, node, vd, PBVH_ITER_UNIQUE)
-  {
+  BKE_pbvh_vertex_iter_begin (sgcontext->ss->pbvh, node, vd, PBVH_ITER_UNIQUE) {
     if (!sculpt_gesture_is_vertex_effected(sgcontext, &vd)) {
       continue;
     }
@@ -1654,7 +1649,7 @@ void PAINT_OT_mask_lasso_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_lasso_modal;
   ot->exec = paint_mask_gesture_lasso_exec;
 
-  ot->poll = SCULPT_mode_poll;
+  ot->poll = SCULPT_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 
@@ -1675,7 +1670,7 @@ void PAINT_OT_mask_box_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_box_modal;
   ot->exec = paint_mask_gesture_box_exec;
 
-  ot->poll = SCULPT_mode_poll;
+  ot->poll = SCULPT_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 
@@ -1696,7 +1691,7 @@ void PAINT_OT_mask_line_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_straightline_oneshot_modal;
   ot->exec = paint_mask_gesture_line_exec;
 
-  ot->poll = SCULPT_mode_poll;
+  ot->poll = SCULPT_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 
@@ -1717,6 +1712,8 @@ void SCULPT_OT_face_set_lasso_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_lasso_modal;
   ot->exec = face_set_gesture_lasso_exec;
 
+  ot->poll = SCULPT_mode_poll_view3d;
+
   /* Properties. */
   WM_operator_properties_gesture_lasso(ot);
   sculpt_gesture_operator_properties(ot);
@@ -1732,7 +1729,7 @@ void SCULPT_OT_face_set_box_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_box_modal;
   ot->exec = face_set_gesture_box_exec;
 
-  ot->poll = SCULPT_mode_poll;
+  ot->poll = SCULPT_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 
@@ -1751,7 +1748,7 @@ void SCULPT_OT_trim_lasso_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_lasso_modal;
   ot->exec = sculpt_trim_gesture_lasso_exec;
 
-  ot->poll = SCULPT_mode_poll;
+  ot->poll = SCULPT_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 
@@ -1772,7 +1769,7 @@ void SCULPT_OT_trim_box_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_box_modal;
   ot->exec = sculpt_trim_gesture_box_exec;
 
-  ot->poll = SCULPT_mode_poll;
+  ot->poll = SCULPT_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 
@@ -1793,7 +1790,7 @@ void SCULPT_OT_project_line_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_straightline_oneshot_modal;
   ot->exec = project_gesture_line_exec;
 
-  ot->poll = SCULPT_mode_poll;
+  ot->poll = SCULPT_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 

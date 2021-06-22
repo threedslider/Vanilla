@@ -366,7 +366,7 @@ typedef struct Library {
 
   struct PackedFile *packedfile;
 
-  /* Temp data needed by read/write code. */
+  /* Temp data needed by read/write code, and liboverride recursive resync. */
   int temp_index;
   /** See BLENDER_FILE_VERSION, BLENDER_FILE_SUBVERSION, needed for do_versions. */
   short versionfile, subversionfile;
@@ -491,6 +491,11 @@ enum {
    * Note that this also applies to shapekeys, even though they are not 100% embedded data...
    */
   LIB_EMBEDDED_DATA_LIB_OVERRIDE = 1 << 12,
+  /**
+   * The override data-block appears to not be needed anymore after resync with linked data, but it
+   * was kept around (because e.g. detected as user-edited).
+   */
+  LIB_LIB_OVERRIDE_RESYNC_LEFTOVER = 1 << 13,
 };
 
 /**
@@ -550,8 +555,15 @@ enum {
   /* RESET_AFTER_USE tag existing data before linking so we know what is new. */
   LIB_TAG_PRE_EXISTING = 1 << 11,
 
-  /* The data-block is a copy-on-write/localized version. */
+  /**
+   * The data-block is a copy-on-write/localized version.
+   *
+   * \warning This should not be cleared on existing data.
+   * If support for this is needed, see T88026 as this flag controls memory ownership
+   * of physics *shared* pointers.
+   */
   LIB_TAG_COPIED_ON_WRITE = 1 << 12,
+
   LIB_TAG_COPIED_ON_WRITE_EVAL_RESULT = 1 << 13,
   LIB_TAG_LOCALIZED = 1 << 14,
 
@@ -572,6 +584,10 @@ enum {
    * When set #ID.session_uuid isn't initialized, since the data isn't part of the session. */
   LIB_TAG_TEMP_MAIN = 1 << 20,
 
+  /**
+   * The data-block is a library override that needs re-sync to its linked reference.
+   */
+  LIB_TAG_LIB_OVERRIDE_NEED_RESYNC = 1 << 21,
 };
 
 /* Tag given ID for an update in all the dependency graphs. */
@@ -582,14 +598,16 @@ typedef enum IDRecalcFlag {
   /* ** Object transformation changed. ** */
   ID_RECALC_TRANSFORM = (1 << 0),
 
-  /* ** Object geometry changed. **
+  /* ** Geometry changed. **
    *
    * When object of armature type gets tagged with this flag, its pose is
    * re-evaluated.
    * When object of other type is tagged with this flag it makes the modifier
    * stack to be re-evaluated.
    * When object data type (mesh, curve, ...) gets tagged with this flag it
-   * makes all objects which shares this data-block to be updated. */
+   * makes all objects which shares this data-block to be updated.
+   * When a collection gets tagged with this flag, all objects depending on the geometry and
+   * transforms on any of the objects in the collection are updated. */
   ID_RECALC_GEOMETRY = (1 << 1),
 
   /* ** Animation or time changed and animation is to be re-evaluated. ** */
@@ -759,19 +777,53 @@ typedef enum IDRecalcFlag {
  * See e.g. how #BKE_library_unused_linked_data_set_tag is doing this.
  */
 enum {
+  /* Special case: Library, should never ever depend on any other type. */
   INDEX_ID_LI = 0,
-  INDEX_ID_IP,
+
+  /* Animation types, might be used by almost all other types. */
+  INDEX_ID_IP, /* Deprecated. */
   INDEX_ID_AC,
-  INDEX_ID_KE,
-  INDEX_ID_PAL,
+
+  /* Grease Pencil, special case, should be with the other obdata, but it can also be used by many
+   * other ID types, including node trees e.g.
+   * So there is no proper place for those, for now keep close to the lower end of the processing
+   * hierarchy, but we may want to re-evaluate that at some point. */
   INDEX_ID_GD,
+
+  /* Node trees, abstraction for procedural data, potentially used by many other ID types.
+   *
+   * NOTE: While node trees can also use many other ID types, they should not /own/ any of those,
+   * while they are being owned by many other ID types. This is why they are placed here. */
   INDEX_ID_NT,
+
+  /* File-wrapper types, those usually 'embed' external files in Blender, with no dependencies to
+   * other ID types. */
+  INDEX_ID_VF,
+  INDEX_ID_TXT,
+  INDEX_ID_SO,
+
+  /* Image/movie types, can be used by shading ID types, but also directly by Objects, Scenes, etc.
+   */
+  INDEX_ID_MSK,
   INDEX_ID_IM,
+  INDEX_ID_MC,
+
+  /* Shading types. */
   INDEX_ID_TE,
   INDEX_ID_MA,
-  INDEX_ID_VF,
-  INDEX_ID_AR,
+  INDEX_ID_LS,
+  INDEX_ID_WO,
+
+  /* Simulation-related types. */
   INDEX_ID_CF,
+  INDEX_ID_SIM,
+  INDEX_ID_PA,
+
+  /* Shape Keys snow-flake, can be used by several obdata types. */
+  INDEX_ID_KE,
+
+  /* Object data types. */
+  INDEX_ID_AR,
   INDEX_ID_ME,
   INDEX_ID_CU,
   INDEX_ID_MB,
@@ -781,26 +833,28 @@ enum {
   INDEX_ID_LT,
   INDEX_ID_LA,
   INDEX_ID_CA,
-  INDEX_ID_TXT,
-  INDEX_ID_SO,
-  INDEX_ID_GR,
-  INDEX_ID_PC,
-  INDEX_ID_BR,
-  INDEX_ID_PA,
   INDEX_ID_SPK,
   INDEX_ID_LP,
-  INDEX_ID_WO,
-  INDEX_ID_MC,
-  INDEX_ID_SCR,
+
+  /* Collection and object types. */
   INDEX_ID_OB,
-  INDEX_ID_LS,
+  INDEX_ID_GR,
+
+  /* Preset-like, not-really-data types, can use many other ID types but should never be used by
+   * any actual data type (besides Scene, due to tool settings). */
+  INDEX_ID_PAL,
+  INDEX_ID_PC,
+  INDEX_ID_BR,
+
+  /* Scene, after preset-like ID types because of tool settings. */
   INDEX_ID_SCE,
+
+  /* UI-related types, should never be used by any other data type. */
+  INDEX_ID_SCR,
   INDEX_ID_WS,
   INDEX_ID_WM,
-  /* TODO: This should probably be tweaked, #Mask and #Simulation are rather low-level types that
-   * should most likely be defined //before// #Object and geometry type indices? */
-  INDEX_ID_MSK,
-  INDEX_ID_SIM,
+
+  /* Special values. */
   INDEX_ID_NULL,
   INDEX_ID_MAX,
 };

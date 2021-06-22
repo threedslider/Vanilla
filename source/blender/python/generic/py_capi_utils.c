@@ -293,7 +293,7 @@ const char *PyC_StringEnum_FindIDFromValue(const struct PyC_StringEnumItems *ite
   return NULL;
 }
 
-/* silly function, we dont use arg. just check its compatible with __deepcopy__ */
+/* Silly function, we don't use arg. just check its compatible with `__deepcopy__`. */
 int PyC_CheckArgs_DeepCopy(PyObject *args)
 {
   PyObject *dummy_pydict;
@@ -523,7 +523,7 @@ PyObject *PyC_FrozenSetFromStrings(const char **strings)
 /**
  * Similar to #PyErr_Format(),
  *
- * Implementation - we cant actually prepend the existing exception,
+ * Implementation - we can't actually prepend the existing exception,
  * because it could have _any_ arguments given to it, so instead we get its
  * ``__str__`` output and raise our own exception including it.
  */
@@ -733,7 +733,6 @@ PyObject *PyC_ExceptionBuffer_Simple(void)
 
   PyErr_Restore(error_type, error_value, error_traceback);
 
-  PyErr_Print();
   PyErr_Clear();
   return string_io_buf;
 }
@@ -847,7 +846,7 @@ PyObject *PyC_DefaultNameSpace(const char *filename)
   PyModule_AddStringConstant(mod_main, "__name__", "__main__");
   if (filename) {
     /* __file__ mainly for nice UI'ness
-     * note: this wont map to a real file when executing text-blocks and buttons. */
+     * note: this won't map to a real file when executing text-blocks and buttons. */
     PyModule_AddObject(mod_main, "__file__", PyC_UnicodeFromByte(filename));
   }
   PyModule_AddObject(mod_main, "__builtins__", builtins);

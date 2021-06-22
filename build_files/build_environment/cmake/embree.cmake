@@ -43,11 +43,17 @@ endif()
 
 if(WIN32)
   set(EMBREE_BUILD_DIR ${BUILD_MODE}/)
+  if(BUILD_MODE STREQUAL Debug)
+    list(APPEND EMBREE_EXTRA_ARGS
+     -DEMBREE_TBBMALLOC_LIBRARY_NAME=tbbmalloc_debug
+     -DEMBREE_TBB_LIBRARY_NAME=tbb_debug
+    )
+  endif()
 else()
   set(EMBREE_BUILD_DIR)
 endif()
 
-if(APPLE AND ("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64"))
+if(BLENDER_PLATFORM_ARM)
   ExternalProject_Add(external_embree
     GIT_REPOSITORY ${EMBREE_ARM_GIT}
     GIT_TAG "blender-arm"
@@ -58,9 +64,9 @@ if(APPLE AND ("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64"))
   )
 else()
   ExternalProject_Add(external_embree
-    URL ${EMBREE_URI}
+    URL file://${PACKAGE_DIR}/${EMBREE_FILE}
     DOWNLOAD_DIR ${DOWNLOAD_DIR}
-    URL_HASH MD5=${EMBREE_HASH}
+    URL_HASH ${EMBREE_HASH_TYPE}=${EMBREE_HASH}
     PREFIX ${BUILD_DIR}/embree
     PATCH_COMMAND ${PATCH_CMD} -p 1 -d ${BUILD_DIR}/embree/src/external_embree < ${PATCH_DIR}/embree.diff
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${LIBDIR}/embree ${DEFAULT_CMAKE_FLAGS} ${EMBREE_EXTRA_ARGS}

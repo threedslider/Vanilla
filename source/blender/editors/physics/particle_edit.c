@@ -466,6 +466,7 @@ static int pe_x_mirror(Object *ob)
 
 typedef struct PEData {
   ViewContext vc;
+  ViewDepths *depths;
 
   const bContext *context;
   Main *bmain;
@@ -524,16 +525,12 @@ static void PE_set_view3d_data(bContext *C, PEData *data)
   ED_view3d_viewcontext_init(C, &data->vc, data->depsgraph);
 
   if (!XRAY_ENABLED(data->vc.v3d)) {
-    if (data->vc.v3d->flag & V3D_INVALID_BACKBUF) {
-      /* needed or else the draw matrix can be incorrect */
-      view3d_operator_needs_opengl(C);
-
-      ED_view3d_backbuf_depth_validate(&data->vc);
-      /* we may need to force an update here by setting the rv3d as dirty
-       * for now it seems ok, but take care!:
-       * rv3d->depths->dirty = 1; */
-      ED_view3d_depth_update(data->vc.region);
-    }
+    ED_view3d_depth_override(data->depsgraph,
+                             data->vc.region,
+                             data->vc.v3d,
+                             data->vc.obact,
+                             V3D_DEPTH_OBJECT_ONLY,
+                             &data->depths);
   }
 }
 
@@ -572,6 +569,16 @@ static void PE_free_random_generator(PEData *data)
   }
 }
 
+static void PE_data_free(PEData *data)
+{
+  PE_free_random_generator(data);
+  PE_free_shape_tree(data);
+  if (data->depths) {
+    ED_view3d_depths_free(data->depths);
+    data->depths = NULL;
+  }
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -581,7 +588,7 @@ static void PE_free_random_generator(PEData *data)
 static bool key_test_depth(const PEData *data, const float co[3], const int screen_co[2])
 {
   View3D *v3d = data->vc.v3d;
-  ViewDepths *vd = data->vc.rv3d->depths;
+  ViewDepths *vd = data->depths;
   float depth;
 
   /* nothing to do */
@@ -611,7 +618,7 @@ static bool key_test_depth(const PEData *data, const float co[3], const int scre
   }
 
   float win[3];
-  ED_view3d_project(data->vc.region, co, win);
+  ED_view3d_project_v3(data->vc.region, co, win);
 
   if (win[2] - 0.00001f > depth) {
     return 0;
@@ -1873,15 +1880,13 @@ void PARTICLE_OT_select_all(wmOperatorType *ot)
 
 bool PE_mouse_particles(bContext *C, const int mval[2], bool extend, bool deselect, bool toggle)
 {
-  PEData data;
+  Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
   Scene *scene = CTX_data_scene(C);
   Object *ob = CTX_data_active_object(C);
   POINT_P;
   KEY_K;
 
-  PE_set_view3d_data(C, &data);
-
-  PTCacheEdit *edit = PE_get_current(data.depsgraph, scene, ob);
+  PTCacheEdit *edit = PE_get_current(depsgraph, scene, ob);
 
   if (!PE_start_edit(edit)) {
     return false;
@@ -1896,6 +1901,8 @@ bool PE_mouse_particles(bContext *C, const int mval[2], bool extend, bool desele
     }
   }
 
+  PEData data;
+  PE_set_view3d_data(C, &data);
   data.mval = mval;
   data.rad = ED_view3d_select_dist_px();
 
@@ -1914,6 +1921,8 @@ bool PE_mouse_particles(bContext *C, const int mval[2], bool extend, bool desele
     PE_update_selection(data.depsgraph, scene, ob, 1);
     WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, data.ob);
   }
+
+  PE_data_free(&data);
 
   return true;
 }
@@ -2206,6 +2215,7 @@ static int select_linked_pick_exec(bContext *C, wmOperator *op)
   for_mouse_hit_keys(&data, select_keys, PSEL_NEAREST);
   PE_update_selection(data.depsgraph, data.scene, data.ob, 1);
   WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, data.ob);
+  PE_data_free(&data);
 
   return OPERATOR_FINISHED;
 }
@@ -2300,11 +2310,14 @@ bool PE_box_select(bContext *C, const rcti *rect, const int sel_op)
     for_mouse_hit_keys(&data, select_key_op, PSEL_ALL_KEYS);
   }
 
-  if (data.is_changed) {
-    PE_update_selection(data.depsgraph, scene, ob, 1);
+  bool is_changed = data.is_changed;
+  PE_data_free(&data);
+
+  if (is_changed) {
+    PE_update_selection(depsgraph, scene, ob, 1);
     WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, ob);
   }
-  return data.is_changed;
+  return is_changed;
 }
 
 /** \} */
@@ -2313,35 +2326,53 @@ bool PE_box_select(bContext *C, const rcti *rect, const int sel_op)
 /** \name Circle Select Operator
  * \{ */
 
-bool PE_circle_select(bContext *C, const int sel_op, const int mval[2], float rad)
+static void pe_select_cache_free_generic_userdata(void *data)
+{
+  PE_data_free(data);
+  MEM_freeN(data);
+}
+
+static void pe_select_cache_init_with_generic_userdata(bContext *C, wmGenericUserData *wm_userdata)
+{
+  struct PEData *data = MEM_callocN(sizeof(*data), __func__);
+  wm_userdata->data = data;
+  wm_userdata->free_fn = pe_select_cache_free_generic_userdata;
+  wm_userdata->use_free = true;
+  PE_set_view3d_data(C, data);
+}
+
+bool PE_circle_select(
+    bContext *C, wmGenericUserData *wm_userdata, const int sel_op, const int mval[2], float rad)
 {
   BLI_assert(ELEM(sel_op, SEL_OP_SET, SEL_OP_ADD, SEL_OP_SUB));
   Depsgraph *depsgraph = CTX_data_depsgraph_pointer(C);
   Scene *scene = CTX_data_scene(C);
   Object *ob = CTX_data_active_object(C);
   PTCacheEdit *edit = PE_get_current(depsgraph, scene, ob);
-  PEData data;
 
   if (!PE_start_edit(edit)) {
     return false;
   }
 
-  const bool select = (sel_op != SEL_OP_SUB);
+  if (wm_userdata->data == NULL) {
+    pe_select_cache_init_with_generic_userdata(C, wm_userdata);
+  }
 
-  PE_set_view3d_data(C, &data);
-  data.mval = mval;
-  data.rad = rad;
-  data.select = select;
+  PEData *data = wm_userdata->data;
+  data->mval = mval;
+  data->rad = rad;
+  data->select = (sel_op != SEL_OP_SUB);
 
   if (SEL_OP_USE_PRE_DESELECT(sel_op)) {
-    data.is_changed = PE_deselect_all_visible_ex(edit);
+    data->is_changed = PE_deselect_all_visible_ex(edit);
   }
-  for_mouse_hit_keys(&data, select_key, 0);
-  if (data.is_changed) {
-    PE_update_selection(data.depsgraph, scene, ob, 1);
+  for_mouse_hit_keys(data, select_key, 0);
+
+  if (data->is_changed) {
+    PE_update_selection(depsgraph, scene, ob, 1);
     WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, ob);
   }
-  return data.is_changed;
+  return data->is_changed;
 }
 
 /** \} */
@@ -2427,8 +2458,11 @@ int PE_lasso_select(bContext *C, const int mcoords[][2], const int mcoords_len, 
     }
   }
 
-  if (data.is_changed) {
-    PE_update_selection(data.depsgraph, scene, ob, 1);
+  bool is_changed = data.is_changed;
+  PE_data_free(&data);
+
+  if (is_changed) {
+    PE_update_selection(depsgraph, scene, ob, 1);
     WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, ob);
     return OPERATOR_FINISHED;
   }
@@ -4731,7 +4765,7 @@ static void brush_edit_apply(bContext *C, wmOperator *op, PointerRNA *itemptr)
            (dx != 0 || dy != 0)) ||
       bedit->first) {
     PEData data = bedit->data;
-    data.context = C; /* TODO(mai): why isnt this set in bedit->data? */
+    data.context = C; /* TODO(mai): why isn't this set in bedit->data? */
 
     view3d_operator_needs_opengl(C);
     selected = (short)count_selected_keys(scene, edit);
@@ -4923,7 +4957,7 @@ static void brush_edit_exit(wmOperator *op)
 {
   BrushEdit *bedit = op->customdata;
 
-  PE_free_random_generator(&bedit->data);
+  PE_data_free(&bedit->data);
   MEM_freeN(bedit);
 }
 
@@ -5377,8 +5411,7 @@ static bool particle_edit_toggle_poll(bContext *C)
     return 0;
   }
 
-  return (ob->particlesystem.first || BKE_modifiers_findby_type(ob, eModifierType_Cloth) ||
-          BKE_modifiers_findby_type(ob, eModifierType_Softbody));
+  return ED_object_particle_edit_mode_supported(ob);
 }
 
 static void free_all_psys_edit(Object *object)
@@ -5391,6 +5424,12 @@ static void free_all_psys_edit(Object *object)
       psys->edit = NULL;
     }
   }
+}
+
+bool ED_object_particle_edit_mode_supported(const Object *ob)
+{
+  return (ob->particlesystem.first || BKE_modifiers_findby_type(ob, eModifierType_Cloth) ||
+          BKE_modifiers_findby_type(ob, eModifierType_Softbody));
 }
 
 void ED_object_particle_edit_mode_enter_ex(Depsgraph *depsgraph, Scene *scene, Object *ob)

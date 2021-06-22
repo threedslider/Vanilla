@@ -86,12 +86,13 @@ typedef struct Bone {
 
   /** Curved bones settings - these define the "rest-pose" for a curved bone. */
   float roll1, roll2;
-  float curve_in_x, curve_in_y;
-  float curve_out_x, curve_out_y;
+  float curve_in_x, curve_in_z;
+  float curve_out_x, curve_out_z;
   /** Length of bezier handles. */
   float ease1, ease2;
-  float scale_in_x, scale_in_y;
-  float scale_out_x, scale_out_y;
+  float scale_in_x DNA_DEPRECATED, scale_in_z DNA_DEPRECATED;
+  float scale_out_x DNA_DEPRECATED, scale_out_z DNA_DEPRECATED;
+  float scale_in[3], scale_out[3];
 
   /** Patch for upward compatibility, UNUSED! */
   float size[3];
@@ -103,6 +104,10 @@ typedef struct Bone {
   /** Type of next/prev bone handles. */
   char bbone_prev_type;
   char bbone_next_type;
+  /** B-Bone flags. */
+  int bbone_flag;
+  short bbone_prev_flag;
+  short bbone_next_flag;
   /** Next/prev bones to use as handle references when calculating bbones (optional). */
   struct Bone *bbone_prev;
   struct Bone *bbone_next;
@@ -134,7 +139,7 @@ typedef struct bArmature {
 
   /** ID data is older than edit-mode data (TODO: move to edit-mode struct). */
   char needs_flush_to_id;
-  char _pad0[7];
+  char _pad0[3];
 
   int flag;
   int drawtype;
@@ -146,6 +151,9 @@ typedef struct bArmature {
   unsigned int layer_used;
   /** For buttons to work, both variables in this order together. */
   unsigned int layer, layer_protected;
+
+  /** Relative position of the axes on the bone, from head (0.0f) to tail (1.0f). */
+  float axes_position;
 } bArmature;
 
 /* armature->flag */
@@ -230,8 +238,10 @@ typedef enum eBone_Flag {
   BONE_MULT_VG_ENV = (1 << 11),
   /** bone doesn't deform geometry */
   BONE_NO_DEFORM = (1 << 12),
+#ifdef DNA_DEPRECATED_ALLOW
   /** set to prevent destruction of its unkeyframed pose (after transform) */
   BONE_UNKEYED = (1 << 13),
+#endif
   /** set to prevent hinge child bones from influencing the transform center */
   BONE_HINGE_CHILD_TRANSFORM = (1 << 14),
 #ifdef DNA_DEPRECATED_ALLOW
@@ -254,8 +264,10 @@ typedef enum eBone_Flag {
   BONE_NO_LOCAL_LOCATION = (1 << 22),
   /** object child will use relative transform (like deform) */
   BONE_RELATIVE_PARENTING = (1 << 23),
+#ifdef DNA_DEPRECATED_ALLOW
   /** it will add the parent end roll to the inroll */
   BONE_ADD_PARENT_END_ROLL = (1 << 24),
+#endif
   /** this bone was transformed by the mirror function */
   BONE_TRANSFORM_MIRROR = (1 << 25),
   /** this bone is associated with a locked vertex group, ONLY USE FOR DRAWING */
@@ -285,6 +297,29 @@ typedef enum eBone_BBoneHandleType {
   BBONE_HANDLE_RELATIVE = 2, /* Custom handle in relative position mode. */
   BBONE_HANDLE_TANGENT = 3,  /* Custom handle in tangent mode (use direction, not location). */
 } eBone_BBoneHandleType;
+
+/* bone->bbone_flag */
+typedef enum eBone_BBoneFlag {
+  /** Add the parent Out roll to the In roll. */
+  BBONE_ADD_PARENT_END_ROLL = (1 << 0),
+  /** Multiply B-Bone easing values with Scale Length. */
+  BBONE_SCALE_EASING = (1 << 1),
+} eBone_BBoneFlag;
+
+/* bone->bbone_prev/next_flag */
+typedef enum eBone_BBoneHandleFlag {
+  /** Use handle bone scaling for scale X. */
+  BBONE_HANDLE_SCALE_X = (1 << 0),
+  /** Use handle bone scaling for scale Y (length). */
+  BBONE_HANDLE_SCALE_Y = (1 << 1),
+  /** Use handle bone scaling for scale Z. */
+  BBONE_HANDLE_SCALE_Z = (1 << 2),
+  /** Use handle bone scaling for easing. */
+  BBONE_HANDLE_SCALE_EASE = (1 << 3),
+  /** Is handle scale required? */
+  BBONE_HANDLE_SCALE_ANY = BBONE_HANDLE_SCALE_X | BBONE_HANDLE_SCALE_Y | BBONE_HANDLE_SCALE_Z |
+                           BBONE_HANDLE_SCALE_EASE,
+} eBone_BBoneHandleFlag;
 
 #define MAXBONENAME 64
 

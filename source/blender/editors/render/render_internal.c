@@ -285,7 +285,7 @@ static void screen_render_single_layer_set(
     scn = (Scene *)BLI_findstring(&mainp->scenes, scene_name, offsetof(ID, name) + 2);
 
     if (scn) {
-      /* camera switch wont have updated */
+      /* camera switch won't have updated */
       scn->r.cfra = (*scene)->r.cfra;
       BKE_scene_camera_switch_update(scn);
 
@@ -574,9 +574,12 @@ static void image_rect_update(void *rjv, RenderResult *rr, volatile rcti *renrec
     return;
   }
   if (rj->image_outdated) {
-    /* update entire render */
+    /* Free all render buffer caches when switching slots, with lock to ensure main
+     * thread is not drawing the buffer at the same time. */
     rj->image_outdated = false;
-    BKE_image_signal(rj->main, ima, NULL, IMA_SIGNAL_COLORMANAGE);
+    ibuf = BKE_image_acquire_ibuf(ima, &rj->iuser, &lock);
+    BKE_image_free_buffers(ima);
+    BKE_image_release_ibuf(ima, ibuf, lock);
     *(rj->do_update) = true;
     return;
   }
@@ -770,7 +773,7 @@ static void render_endjob(void *rjv)
      * was locked before running the job.
      */
     WM_set_locked_interface(G_MAIN->wm.first, false);
-    DEG_on_visible_update(G_MAIN, false);
+    DEG_tag_on_visible_update(G_MAIN, false);
   }
 }
 
@@ -788,8 +791,10 @@ static int render_breakjob(void *rjv)
   return 0;
 }
 
-/* for exec() when there is no render job
- * note: this wont check for the escape key being pressed, but doing so isnt threadsafe */
+/**
+ * For exec() when there is no render job
+ * note: this won't check for the escape key being pressed, but doing so isn't thread-safe.
+ */
 static int render_break(void *UNUSED(rjv))
 {
   if (G.is_break) {

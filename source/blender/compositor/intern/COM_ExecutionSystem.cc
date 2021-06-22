@@ -21,21 +21,18 @@
 #include "BLI_utildefines.h"
 #include "PIL_time.h"
 
-#include "BKE_node.h"
-
-#include "BLT_translation.h"
-
-#include "COM_Converter.h"
 #include "COM_Debug.h"
-#include "COM_ExecutionGroup.h"
+#include "COM_FullFrameExecutionModel.h"
 #include "COM_NodeOperation.h"
 #include "COM_NodeOperationBuilder.h"
-#include "COM_ReadBufferOperation.h"
+#include "COM_TiledExecutionModel.h"
 #include "COM_WorkScheduler.h"
 
 #ifdef WITH_CXX_GUARDEDALLOC
 #  include "MEM_guardedalloc.h"
 #endif
+
+namespace blender::compositor {
 
 ExecutionSystem::ExecutionSystem(RenderData *rd,
                                  Scene *scene,
@@ -53,10 +50,10 @@ ExecutionSystem::ExecutionSystem(RenderData *rd,
   this->m_context.setFastCalculation(fastcalculation);
   /* initialize the CompositorContext */
   if (rendering) {
-    this->m_context.setQuality((CompositorQuality)editingtree->render_quality);
+    this->m_context.setQuality((eCompositorQuality)editingtree->render_quality);
   }
   else {
-    this->m_context.setQuality((CompositorQuality)editingtree->edit_quality);
+    this->m_context.setQuality((eCompositorQuality)editingtree->edit_quality);
   }
   this->m_context.setRendering(rendering);
   this->m_context.setHasActiveOpenCLDevices(WorkScheduler::has_gpu_devices() &&
@@ -71,58 +68,36 @@ ExecutionSystem::ExecutionSystem(RenderData *rd,
     builder.convertToOperations(this);
   }
 
-  unsigned int index;
-  unsigned int resolution[2];
-
-  rctf *viewer_border = &editingtree->viewer_border;
-  bool use_viewer_border = (editingtree->flag & NTREE_VIEWER_BORDER) &&
-                           viewer_border->xmin < viewer_border->xmax &&
-                           viewer_border->ymin < viewer_border->ymax;
-
-  editingtree->stats_draw(editingtree->sdh, TIP_("Compositing | Determining resolution"));
-
-  for (index = 0; index < this->m_groups.size(); index++) {
-    resolution[0] = 0;
-    resolution[1] = 0;
-    ExecutionGroup *executionGroup = this->m_groups[index];
-    executionGroup->determineResolution(resolution);
-
-    if (rendering) {
-      /* case when cropping to render border happens is handled in
-       * compositor output and render layer nodes
-       */
-      if ((rd->mode & R_BORDER) && !(rd->mode & R_CROP)) {
-        executionGroup->setRenderBorder(
-            rd->border.xmin, rd->border.xmax, rd->border.ymin, rd->border.ymax);
-      }
-    }
-
-    if (use_viewer_border) {
-      executionGroup->setViewerBorder(
-          viewer_border->xmin, viewer_border->xmax, viewer_border->ymin, viewer_border->ymax);
-    }
+  switch (m_context.get_execution_model()) {
+    case eExecutionModel::Tiled:
+      execution_model_ = new TiledExecutionModel(m_context, m_operations, m_groups);
+      break;
+    case eExecutionModel::FullFrame:
+      execution_model_ = new FullFrameExecutionModel(m_context, active_buffers_, m_operations);
+      break;
+    default:
+      BLI_assert(!"Non implemented execution model");
+      break;
   }
-
-  //  DebugInfo::graphviz(this);
 }
 
 ExecutionSystem::~ExecutionSystem()
 {
-  unsigned int index;
-  for (index = 0; index < this->m_operations.size(); index++) {
-    NodeOperation *operation = this->m_operations[index];
+  delete execution_model_;
+
+  for (NodeOperation *operation : m_operations) {
     delete operation;
   }
   this->m_operations.clear();
-  for (index = 0; index < this->m_groups.size(); index++) {
-    ExecutionGroup *group = this->m_groups[index];
+
+  for (ExecutionGroup *group : m_groups) {
     delete group;
   }
   this->m_groups.clear();
 }
 
-void ExecutionSystem::set_operations(const blender::Vector<NodeOperation *> &operations,
-                                     const blender::Vector<ExecutionGroup *> &groups)
+void ExecutionSystem::set_operations(const Vector<NodeOperation *> &operations,
+                                     const Vector<ExecutionGroup *> &groups)
 {
   m_operations = operations;
   m_groups = groups;
@@ -130,90 +105,14 @@ void ExecutionSystem::set_operations(const blender::Vector<NodeOperation *> &ope
 
 void ExecutionSystem::execute()
 {
-  const bNodeTree *editingtree = this->m_context.getbNodeTree();
-  editingtree->stats_draw(editingtree->sdh, TIP_("Compositing | Initializing execution"));
-
   DebugInfo::execute_started(this);
-
-  unsigned int order = 0;
-  for (NodeOperation *operation : m_operations) {
-    if (operation->isReadBufferOperation()) {
-      ReadBufferOperation *readOperation = (ReadBufferOperation *)operation;
-      readOperation->setOffset(order);
-      order++;
-    }
-  }
-  unsigned int index;
-
-  // First allocale all write buffer
-  for (index = 0; index < this->m_operations.size(); index++) {
-    NodeOperation *operation = this->m_operations[index];
-    if (operation->isWriteBufferOperation()) {
-      operation->setbNodeTree(this->m_context.getbNodeTree());
-      operation->initExecution();
-    }
-  }
-  // Connect read buffers to their write buffers
-  for (index = 0; index < this->m_operations.size(); index++) {
-    NodeOperation *operation = this->m_operations[index];
-    if (operation->isReadBufferOperation()) {
-      ReadBufferOperation *readOperation = (ReadBufferOperation *)operation;
-      readOperation->updateMemoryBuffer();
-    }
-  }
-  // initialize other operations
-  for (index = 0; index < this->m_operations.size(); index++) {
-    NodeOperation *operation = this->m_operations[index];
-    if (!operation->isWriteBufferOperation()) {
-      operation->setbNodeTree(this->m_context.getbNodeTree());
-      operation->initExecution();
-    }
-  }
-  for (index = 0; index < this->m_groups.size(); index++) {
-    ExecutionGroup *executionGroup = this->m_groups[index];
-    executionGroup->setChunksize(this->m_context.getChunksize());
-    executionGroup->initExecution();
-  }
-
-  WorkScheduler::start(this->m_context);
-
-  execute_groups(COM_PRIORITY_HIGH);
-  if (!this->getContext().isFastCalculation()) {
-    execute_groups(COM_PRIORITY_MEDIUM);
-    execute_groups(COM_PRIORITY_LOW);
-  }
-
-  WorkScheduler::finish();
-  WorkScheduler::stop();
-
-  editingtree->stats_draw(editingtree->sdh, TIP_("Compositing | De-initializing execution"));
-  for (index = 0; index < this->m_operations.size(); index++) {
-    NodeOperation *operation = this->m_operations[index];
-    operation->deinitExecution();
-  }
-  for (index = 0; index < this->m_groups.size(); index++) {
-    ExecutionGroup *executionGroup = this->m_groups[index];
-    executionGroup->deinitExecution();
-  }
+  execution_model_->execute(*this);
 }
 
-void ExecutionSystem::execute_groups(CompositorPriority priority)
+void ExecutionSystem::execute_work(const rcti &work_rect,
+                                   std::function<void(const rcti &split_rect)> work_func)
 {
-  blender::Vector<ExecutionGroup *> execution_groups = find_output_execution_groups(priority);
-  for (ExecutionGroup *group : execution_groups) {
-    group->execute(this);
-  }
+  execution_model_->execute_work(work_rect, work_func);
 }
 
-blender::Vector<ExecutionGroup *> ExecutionSystem::find_output_execution_groups(
-    CompositorPriority priority) const
-{
-  blender::Vector<ExecutionGroup *> result;
-
-  for (ExecutionGroup *group : m_groups) {
-    if (group->isOutputExecutionGroup() && group->getRenderPriotrity() == priority) {
-      result.append(group);
-    }
-  }
-  return result;
-}
+}  // namespace blender::compositor

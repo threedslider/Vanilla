@@ -1345,7 +1345,7 @@ BLI_bitmap *pyrna_set_to_enum_bitmap(const EnumPropertyItem *items,
         index = (int)ret_convert.as_unsigned;
       }
       else {
-        BLI_assert(0);
+        BLI_assert_unreachable();
       }
     }
     BLI_assert(index < bitmap_size);
@@ -1647,7 +1647,7 @@ int pyrna_pydict_to_props(PointerRNA *ptr,
       break;
     }
 
-    item = PyDict_GetItemString(kw, arg_name); /* Wont set an error. */
+    item = PyDict_GetItemString(kw, arg_name); /* Won't set an error. */
 
     if (item == NULL) {
       if (all_args) {
@@ -2546,7 +2546,7 @@ static int pyrna_prop_collection_subscript_str_lib_pair_ptr(BPy_PropertyRNA *sel
     if (lib == NULL) {
       if (err_not_found) {
         PyErr_Format(PyExc_KeyError,
-                     "%s: lib name '%.240s' "
+                     "%s: lib filepath '%.1024s' "
                      "does not reference a valid library",
                      err_prefix,
                      keylib_str);
@@ -3562,7 +3562,7 @@ PyDoc_STRVAR(pyrna_struct_keys_doc,
              "   dictionary function of the same name).\n"
              "\n"
              "   :return: custom property keys.\n"
-             "   :rtype: list of strings\n"
+             "   :rtype: :class:`idprop.type.IDPropertyGroupViewKeys`\n"
              "\n" BPY_DOC_ID_PROP_TYPE_NOTE);
 static PyObject *pyrna_struct_keys(BPy_PropertyRNA *self)
 {
@@ -3573,13 +3573,9 @@ static PyObject *pyrna_struct_keys(BPy_PropertyRNA *self)
     return NULL;
   }
 
+  /* `group` may be NULL. */
   group = RNA_struct_idprops(&self->ptr, 0);
-
-  if (group == NULL) {
-    return PyList_New(0);
-  }
-
-  return BPy_Wrap_GetKeys(group);
+  return BPy_Wrap_GetKeys_View_WithID(self->ptr.owner_id, group);
 }
 
 PyDoc_STRVAR(pyrna_struct_items_doc,
@@ -3589,7 +3585,7 @@ PyDoc_STRVAR(pyrna_struct_items_doc,
              "   dictionary function of the same name).\n"
              "\n"
              "   :return: custom property key, value pairs.\n"
-             "   :rtype: list of key, value tuples\n"
+             "   :rtype: :class:`idprop.type.IDPropertyGroupViewItems`\n"
              "\n" BPY_DOC_ID_PROP_TYPE_NOTE);
 static PyObject *pyrna_struct_items(BPy_PropertyRNA *self)
 {
@@ -3600,13 +3596,9 @@ static PyObject *pyrna_struct_items(BPy_PropertyRNA *self)
     return NULL;
   }
 
+  /* `group` may be NULL. */
   group = RNA_struct_idprops(&self->ptr, 0);
-
-  if (group == NULL) {
-    return PyList_New(0);
-  }
-
-  return BPy_Wrap_GetItems(self->ptr.owner_id, group);
+  return BPy_Wrap_GetItems_View_WithID(self->ptr.owner_id, group);
 }
 
 PyDoc_STRVAR(pyrna_struct_values_doc,
@@ -3616,7 +3608,7 @@ PyDoc_STRVAR(pyrna_struct_values_doc,
              "   dictionary function of the same name).\n"
              "\n"
              "   :return: custom property values.\n"
-             "   :rtype: list\n"
+             "   :rtype: :class:`idprop.type.IDPropertyGroupViewValues`\n"
              "\n" BPY_DOC_ID_PROP_TYPE_NOTE);
 static PyObject *pyrna_struct_values(BPy_PropertyRNA *self)
 {
@@ -3628,13 +3620,9 @@ static PyObject *pyrna_struct_values(BPy_PropertyRNA *self)
     return NULL;
   }
 
+  /* `group` may be NULL. */
   group = RNA_struct_idprops(&self->ptr, 0);
-
-  if (group == NULL) {
-    return PyList_New(0);
-  }
-
-  return BPy_Wrap_GetValues(self->ptr.owner_id, group);
+  return BPy_Wrap_GetValues_View_WithID(self->ptr.owner_id, group);
 }
 
 PyDoc_STRVAR(pyrna_struct_is_property_set_doc,
@@ -4207,6 +4195,10 @@ static void pyrna_dir_members_rna(PyObject *list, PointerRNA *ptr)
     iterprop = RNA_struct_iterator_property(ptr->type);
 
     RNA_PROP_BEGIN (ptr, itemptr, iterprop) {
+      /* Custom-properties are exposed using `__getitem__`, exclude from `__dir__`. */
+      if (RNA_property_is_idprop(itemptr.data)) {
+        continue;
+      }
       nameptr = RNA_struct_name_get_alloc(&itemptr, name, sizeof(name), &namelen);
 
       if (nameptr) {
@@ -5002,8 +4994,13 @@ static PyObject *pyrna_struct_pop(BPy_StructRNA *self, PyObject *args)
     idprop = IDP_GetPropertyFromGroup(group, key);
 
     if (idprop) {
-      PyObject *ret = BPy_IDGroup_WrapData(self->ptr.owner_id, idprop, group);
-      IDP_RemoveFromGroup(group, idprop);
+      /* Don't use #BPy_IDGroup_WrapData as the id-property is being removed from the ID. */
+      PyObject *ret = BPy_IDGroup_MapDataToPy(idprop);
+      /* Internal error. */
+      if (UNLIKELY(ret == NULL)) {
+        return NULL;
+      }
+      IDP_FreeFromGroup(group, idprop);
       return ret;
     }
   }
@@ -5550,7 +5547,7 @@ static PyObject *pyprop_array_foreach_getset(BPy_PropertyArrayRNA *self,
       case PROP_POINTER:
       case PROP_COLLECTION:
         /* Should never happen. */
-        BLI_assert(false);
+        BLI_assert_unreachable();
         break;
     }
 
@@ -5595,7 +5592,7 @@ static PyObject *pyprop_array_foreach_getset(BPy_PropertyArrayRNA *self,
       case PROP_POINTER:
       case PROP_COLLECTION:
         /* Should never happen. */
-        BLI_assert(false);
+        BLI_assert_unreachable();
         break;
     }
 
@@ -6227,7 +6224,7 @@ static PyObject *pyrna_func_call(BPy_FunctionRNA *self, PyObject *args, PyObject
         err = -1;
         break;
       }
-      /* PyDict_GetItemString wont raise an error. */
+      /* PyDict_GetItemString won't raise an error. */
       continue;
     }
 
@@ -7078,13 +7075,9 @@ static PyTypeObject pyrna_prop_collection_iter_Type = {
     NULL, /* ternaryfunc tp_call; */
     NULL, /* reprfunc tp_str; */
 
-/* will only use these if this is a subtype of a py class */
-#  if defined(_MSC_VER)
-    NULL, /* defer assignment */
-#  else
+    /* will only use these if this is a subtype of a py class */
     PyObject_GenericGetAttr, /* getattrofunc tp_getattro; */
-#  endif
-    NULL, /* setattrofunc tp_setattro; */
+    NULL,                    /* setattrofunc tp_setattro; */
 
     /* Functions to access object as input/output buffer */
     NULL, /* PyBufferProcs *tp_as_buffer; */
@@ -7110,13 +7103,9 @@ static PyTypeObject pyrna_prop_collection_iter_Type = {
 #  else
     0,
 #  endif
-/*** Added in release 2.2 ***/
-/*   Iterators */
-#  if defined(_MSC_VER)
-    NULL, /* defer assignment */
-#  else
-    PyObject_SelfIter, /* getiterfunc tp_iter; */
-#  endif
+    /*** Added in release 2.2 ***/
+    /*   Iterators */
+    PyObject_SelfIter,                             /* getiterfunc tp_iter; */
     (iternextfunc)pyrna_prop_collection_iter_next, /* iternextfunc tp_iternext; */
 
     /*** Attribute descriptor and subclassing stuff ***/
@@ -7640,9 +7629,6 @@ void BPY_rna_init(void)
   /* For some reason MSVC complains of these. */
 #if defined(_MSC_VER)
   pyrna_struct_meta_idprop_Type.tp_base = &PyType_Type;
-
-  pyrna_prop_collection_iter_Type.tp_iter = PyObject_SelfIter;
-  pyrna_prop_collection_iter_Type.tp_getattro = PyObject_GenericGetAttr;
 #endif
 
   /* metaclass */
@@ -7849,7 +7835,7 @@ StructRNA *pyrna_struct_as_srna(PyObject *self, const bool parent, const char *e
   BPy_StructRNA *py_srna = NULL;
   StructRNA *srna;
 
-  /* Unfortunately PyObject_GetAttrString wont look up this types tp_dict first :/ */
+  /* Unfortunately PyObject_GetAttrString won't look up this types tp_dict first :/ */
   if (PyType_Check(self)) {
     py_srna = (BPy_StructRNA *)PyDict_GetItem(((PyTypeObject *)self)->tp_dict,
                                               bpy_intern_str_bl_rna);
@@ -8043,7 +8029,7 @@ static int pyrna_deferred_register_class_from_type_hints(StructRNA *srna, PyType
       }
     }
     else {
-      /* Should never happen, an error wont have been raised, so raise one. */
+      /* Should never happen, an error won't have been raised, so raise one. */
       PyErr_Format(PyExc_TypeError,
                    "typing.get_type_hints returned: %.200s, expected dict\n",
                    Py_TYPE(annotations_dict)->tp_name);
@@ -8451,7 +8437,7 @@ static int bpy_class_call(bContext *C, PointerRNA *ptr, FunctionRNA *func, Param
     else if (py_srna == NULL) {
       py_class_instance = NULL;
     }
-    else if (py_srna == Py_None) { /* Probably wont ever happen, but possible. */
+    else if (py_srna == Py_None) { /* Probably won't ever happen, but possible. */
       Py_DECREF(py_srna);
       py_class_instance = NULL;
     }
@@ -8681,7 +8667,7 @@ static int bpy_class_call(bContext *C, PointerRNA *ptr, FunctionRNA *func, Param
 
   if (err != 0) {
     ReportList *reports;
-    /* Alert the user, else they wont know unless they see the console. */
+    /* Alert the user, else they won't know unless they see the console. */
     if ((!is_staticmethod) && (!is_classmethod) && (ptr->data) &&
         (RNA_struct_is_a(ptr->type, &RNA_Operator)) &&
         (is_valid_wm == (CTX_wm_manager(C) != NULL))) {
@@ -8689,7 +8675,7 @@ static int bpy_class_call(bContext *C, PointerRNA *ptr, FunctionRNA *func, Param
       reports = op->reports;
     }
     else {
-      /* Wont alert users, but they can view in 'info' space. */
+      /* Won't alert users, but they can view in 'info' space. */
       reports = CTX_wm_reports(C);
     }
 

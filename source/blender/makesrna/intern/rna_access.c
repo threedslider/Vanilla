@@ -226,7 +226,7 @@ void RNA_pointer_recast(PointerRNA *ptr, PointerRNA *r_ptr)
   {
     StructRNA *base;
     PointerRNA t_ptr;
-    *r_ptr = *ptr; /* initialize as the same in case cant recast */
+    *r_ptr = *ptr; /* initialize as the same in case can't recast */
 
     for (base = ptr->type->base; base; base = base->base) {
       t_ptr = rna_pointer_inherit_refine(ptr, base, ptr->data);
@@ -1189,6 +1189,24 @@ PropertyUnit RNA_property_unit(PropertyRNA *prop)
   return RNA_SUBTYPE_UNIT(RNA_property_subtype(prop));
 }
 
+PropertyScaleType RNA_property_ui_scale(PropertyRNA *prop)
+{
+  PropertyRNA *rna_prop = rna_ensure_property(prop);
+
+  switch (rna_prop->type) {
+    case PROP_INT: {
+      IntPropertyRNA *iprop = (IntPropertyRNA *)rna_prop;
+      return iprop->ui_scale_type;
+    }
+    case PROP_FLOAT: {
+      FloatPropertyRNA *fprop = (FloatPropertyRNA *)rna_prop;
+      return fprop->ui_scale_type;
+    }
+    default:
+      return PROP_SCALE_LINEAR;
+  }
+}
+
 int RNA_property_flag(PropertyRNA *prop)
 {
   return rna_ensure_property(prop)->flag;
@@ -1623,34 +1641,34 @@ void RNA_property_enum_items_ex(bContext *C,
 
   *r_free = false;
 
-  if (!use_static && eprop->item_fn && (C != NULL || (prop->flag & PROP_ENUM_NO_CONTEXT))) {
-    const EnumPropertyItem *item;
+  if (!use_static && (eprop->item_fn != NULL)) {
+    const bool no_context = (prop->flag & PROP_ENUM_NO_CONTEXT) ||
+                            ((ptr->type->flag & STRUCT_NO_CONTEXT_WITHOUT_OWNER_ID) &&
+                             (ptr->owner_id == NULL));
+    if (C != NULL || no_context) {
+      const EnumPropertyItem *item;
 
-    if (prop->flag & PROP_ENUM_NO_CONTEXT) {
-      item = eprop->item_fn(NULL, ptr, prop, r_free);
-    }
-    else {
-      item = eprop->item_fn(C, ptr, prop, r_free);
-    }
+      item = eprop->item_fn(no_context ? NULL : C, ptr, prop, r_free);
 
-    /* any callbacks returning NULL should be fixed */
-    BLI_assert(item != NULL);
+      /* any callbacks returning NULL should be fixed */
+      BLI_assert(item != NULL);
 
-    if (r_totitem) {
-      int tot;
-      for (tot = 0; item[tot].identifier; tot++) {
-        /* pass */
+      if (r_totitem) {
+        int tot;
+        for (tot = 0; item[tot].identifier; tot++) {
+          /* pass */
+        }
+        *r_totitem = tot;
       }
-      *r_totitem = tot;
-    }
 
-    *r_item = item;
-  }
-  else {
-    *r_item = eprop->item;
-    if (r_totitem) {
-      *r_totitem = eprop->totitem;
+      *r_item = item;
+      return;
     }
+  }
+
+  *r_item = eprop->item;
+  if (r_totitem) {
+    *r_totitem = eprop->totitem;
   }
 }
 
@@ -1753,42 +1771,42 @@ void RNA_property_enum_items_gettexted_all(bContext *C,
     *r_totitem = eprop->totitem;
   }
 
-  if (eprop->item_fn && (C != NULL || (prop->flag & PROP_ENUM_NO_CONTEXT))) {
-    const EnumPropertyItem *item;
-    int i;
-    bool free = false;
+  if (eprop->item_fn != NULL) {
+    const bool no_context = (prop->flag & PROP_ENUM_NO_CONTEXT) ||
+                            ((ptr->type->flag & STRUCT_NO_CONTEXT_WITHOUT_OWNER_ID) &&
+                             (ptr->owner_id == NULL));
+    if (C != NULL || no_context) {
+      const EnumPropertyItem *item;
+      int i;
+      bool free = false;
 
-    if (prop->flag & PROP_ENUM_NO_CONTEXT) {
-      item = eprop->item_fn(NULL, ptr, prop, &free);
-    }
-    else {
-      item = eprop->item_fn(C, ptr, prop, &free);
-    }
+      item = eprop->item_fn(no_context ? NULL : NULL, ptr, prop, &free);
 
-    /* any callbacks returning NULL should be fixed */
-    BLI_assert(item != NULL);
+      /* any callbacks returning NULL should be fixed */
+      BLI_assert(item != NULL);
 
-    for (i = 0; i < eprop->totitem; i++) {
-      bool exists = false;
-      int i_fixed;
+      for (i = 0; i < eprop->totitem; i++) {
+        bool exists = false;
+        int i_fixed;
 
-      /* Items that do not exist on list are returned,
-       * but have their names/identifiers NULL'ed out. */
-      for (i_fixed = 0; item[i_fixed].identifier; i_fixed++) {
-        if (STREQ(item[i_fixed].identifier, item_array[i].identifier)) {
-          exists = true;
-          break;
+        /* Items that do not exist on list are returned,
+         * but have their names/identifiers NULL'ed out. */
+        for (i_fixed = 0; item[i_fixed].identifier; i_fixed++) {
+          if (STREQ(item[i_fixed].identifier, item_array[i].identifier)) {
+            exists = true;
+            break;
+          }
+        }
+
+        if (!exists) {
+          item_array[i].name = NULL;
+          item_array[i].identifier = "";
         }
       }
 
-      if (!exists) {
-        item_array[i].name = NULL;
-        item_array[i].identifier = "";
+      if (free) {
+        MEM_freeN((void *)item);
       }
-    }
-
-    if (free) {
-      MEM_freeN((void *)item);
     }
   }
 
@@ -3596,15 +3614,6 @@ int RNA_property_enum_get_default(PointerRNA *UNUSED(ptr), PropertyRNA *prop)
   BLI_assert(RNA_property_type(prop) == PROP_ENUM);
 
   return eprop->defaultvalue;
-}
-
-void *RNA_property_enum_py_data_get(PropertyRNA *prop)
-{
-  EnumPropertyRNA *eprop = (EnumPropertyRNA *)prop;
-
-  BLI_assert(RNA_property_type(prop) == PROP_ENUM);
-
-  return eprop->py_data;
 }
 
 /**
@@ -6106,13 +6115,25 @@ char *RNA_path_full_ID_py(Main *bmain, ID *id)
     path = "";
   }
 
-  char id_esc[(sizeof(id->name) - 2) * 2];
+  char lib_filepath_esc[(sizeof(id->lib->filepath) * 2) + 4];
+  if (id->lib != NULL) {
+    int ofs = 0;
+    memcpy(lib_filepath_esc, ", \"", 3);
+    ofs += 3;
+    ofs += BLI_str_escape(lib_filepath_esc + ofs, id->lib->filepath, sizeof(lib_filepath_esc));
+    memcpy(lib_filepath_esc + ofs, "\"", 2);
+  }
+  else {
+    lib_filepath_esc[0] = '\0';
+  }
 
+  char id_esc[(sizeof(id->name) - 2) * 2];
   BLI_str_escape(id_esc, id->name + 2, sizeof(id_esc));
 
-  return BLI_sprintfN("bpy.data.%s[\"%s\"]%s%s",
+  return BLI_sprintfN("bpy.data.%s[\"%s\"%s]%s%s",
                       BKE_idtype_idcode_to_name_plural(GS(id->name)),
                       id_esc,
+                      lib_filepath_esc,
                       path[0] ? "." : "",
                       path);
 }
@@ -6848,7 +6869,7 @@ char *RNA_pointer_as_string_keywords_ex(bContext *C,
         if (as_function && RNA_property_type(prop) == PROP_POINTER) {
           /* don't expand pointers for functions */
           if (flag & PROP_NEVER_NULL) {
-            /* we cant really do the right thing here. arg=arg?, hrmf! */
+            /* we can't really do the right thing here. arg=arg?, hrmf! */
             buf = BLI_strdup(arg_name);
           }
           else {
@@ -8163,7 +8184,7 @@ void _RNA_warning(const char *format, ...)
   vprintf(format, args);
   va_end(args);
 
-  /* gcc macro adds '\n', but cant use for other compilers */
+  /* gcc macro adds '\n', but can't use for other compilers */
 #ifndef __GNUC__
   fputc('\n', stdout);
 #endif

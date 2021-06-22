@@ -52,6 +52,7 @@
 #include "BKE_context.h"
 #include "BKE_idprop.h"
 #include "BKE_main.h"
+#include "BKE_report.h"
 #include "BKE_scene.h"
 #include "BKE_screen.h"
 #include "BKE_unit.h"
@@ -984,12 +985,12 @@ bool UI_but_active_only(const bContext *C, ARegion *region, uiBlock *block, uiBu
 
 /**
  * \warning This must run after other handlers have been added,
- * otherwise the handler wont be removed, see: T71112.
+ * otherwise the handler won't be removed, see: T71112.
  */
 bool UI_block_active_only_flagged_buttons(const bContext *C, ARegion *region, uiBlock *block)
 {
   /* Running this command before end-block has run, means buttons that open menus
-   * wont have those menus correctly positioned, see T83539. */
+   * won't have those menus correctly positioned, see T83539. */
   BLI_assert(block->endblock);
 
   bool done = false;
@@ -1038,7 +1039,6 @@ static bool ui_but_is_rna_undo(const uiBut *but)
     if (ID_CHECK_UNDO(id) == false) {
       return false;
     }
-    return true;
   }
   if (but->rnapoin.type && !RNA_struct_undo_check(but->rnapoin.type)) {
     return false;
@@ -1160,7 +1160,6 @@ void ui_but_add_shortcut(uiBut *but, const char *shortcut_str, const bool do_str
   MEM_freeN(butstr_orig);
   but->str = but->strdata;
   but->flag |= UI_BUT_HAS_SEP_CHAR;
-  but->drawflag |= UI_BUT_HAS_SHORTCUT;
   ui_but_update(but);
 }
 
@@ -1816,6 +1815,29 @@ static void ui_but_validate(const uiBut *but)
 }
 #endif
 
+/**
+ * Check if the operator \a ot poll is successful with the context given by \a but (optionally).
+ * \param but: The button that might store context. Can be NULL for convenience (e.g. if there is
+ * no button to take context from, but we still want to poll the operator).
+ */
+bool ui_but_context_poll_operator(bContext *C, wmOperatorType *ot, const uiBut *but)
+{
+  bool result;
+  int opcontext = but ? but->opcontext : WM_OP_INVOKE_DEFAULT;
+
+  if (but && but->context) {
+    CTX_store_set(C, but->context);
+  }
+
+  result = WM_operator_poll_context(C, ot, opcontext);
+
+  if (but && but->context) {
+    CTX_store_set(C, NULL);
+  }
+
+  return result;
+}
+
 void UI_block_end_ex(const bContext *C, uiBlock *block, const int xy[2], int r_xy[2])
 {
   wmWindow *window = CTX_wm_window(C);
@@ -1841,16 +1863,8 @@ void UI_block_end_ex(const bContext *C, uiBlock *block, const int xy[2], int r_x
     if (but->optype) {
       wmOperatorType *ot = but->optype;
 
-      if (but->context) {
-        CTX_store_set((bContext *)C, but->context);
-      }
-
-      if (ot == NULL || WM_operator_poll_context((bContext *)C, ot, but->opcontext) == 0) {
+      if (ot == NULL || !ui_but_context_poll_operator((bContext *)C, ot, but)) {
         but->flag |= UI_BUT_DISABLED;
-      }
-
-      if (but->context) {
-        CTX_store_set((bContext *)C, NULL);
       }
     }
 
@@ -2310,6 +2324,14 @@ bool ui_but_is_float(const uiBut *but)
   }
 
   return false;
+}
+
+PropertyScaleType ui_but_scale_type(const uiBut *but)
+{
+  if (but->rnaprop) {
+    return RNA_property_ui_scale(but->rnaprop);
+  }
+  return PROP_SCALE_LINEAR;
 }
 
 bool ui_but_is_bool(const uiBut *but)
@@ -2898,7 +2920,14 @@ char *ui_but_string_get_dynamic(uiBut *but, int *r_str_size)
 static bool ui_number_from_string_units(
     bContext *C, const char *str, const int unit_type, const UnitSettings *unit, double *r_value)
 {
-  return user_string_to_number(C, str, unit, unit_type, UI_NUMBER_EVAL_ERROR_PREFIX, r_value);
+  char *error = NULL;
+  const bool ok = user_string_to_number(C, str, unit, unit_type, r_value, true, &error);
+  if (error) {
+    ReportList *reports = CTX_wm_reports(C);
+    BKE_reportf(reports, RPT_ERROR, "%s: %s", UI_NUMBER_EVAL_ERROR_PREFIX, error);
+    MEM_freeN(error);
+  }
+  return ok;
 }
 
 static bool ui_number_from_string_units_with_but(bContext *C,
@@ -2915,7 +2944,11 @@ static bool ui_number_from_string(bContext *C, const char *str, double *r_value)
 {
   bool ok;
 #ifdef WITH_PYTHON
-  ok = BPY_run_string_as_number(C, NULL, str, UI_NUMBER_EVAL_ERROR_PREFIX, r_value);
+  struct BPy_RunErrInfo err_info = {
+      .reports = CTX_wm_reports(C),
+      .report_prefix = UI_NUMBER_EVAL_ERROR_PREFIX,
+  };
+  ok = BPY_run_string_as_number(C, NULL, str, &err_info, r_value);
 #else
   UNUSED_VARS(C);
   *r_value = atof(str);
@@ -3173,27 +3206,25 @@ void ui_but_range_set_hard(uiBut *but)
 
   const PropertyType type = RNA_property_type(but->rnaprop);
 
-  /* clamp button range to something reasonable in case
-   * we get -inf/inf from RNA properties */
   if (type == PROP_INT) {
     int imin, imax;
     RNA_property_int_range(&but->rnapoin, but->rnaprop, &imin, &imax);
-    but->hardmin = (imin == INT_MIN) ? -1e4 : imin;
-    but->hardmax = (imin == INT_MAX) ? 1e4 : imax;
+    but->hardmin = imin;
+    but->hardmax = imax;
   }
   else if (type == PROP_FLOAT) {
     float fmin, fmax;
     RNA_property_float_range(&but->rnapoin, but->rnaprop, &fmin, &fmax);
-    but->hardmin = (fmin == -FLT_MAX) ? (float)-1e4 : fmin;
-    but->hardmax = (fmax == FLT_MAX) ? (float)1e4 : fmax;
+    but->hardmin = fmin;
+    but->hardmax = fmax;
   }
 }
 
 /* note: this could be split up into functions which handle arrays and not */
 void ui_but_range_set_soft(uiBut *but)
 {
-  /* ideally we would not limit this but practically, its more than
-   * enough worst case is very long vectors wont use a smart soft-range
+  /* Ideally we would not limit this, but practically it's more than
+   * enough. Worst case is very long vectors won't use a smart soft-range,
    * which isn't so bad. */
 
   if (but->rnaprop) {
@@ -4162,7 +4193,7 @@ static void ui_def_but_rna__menu(bContext *UNUSED(C), uiLayout *layout, void *bu
   RNA_property_enum_items_gettexted(
       block->evil_C, &but->rnapoin, but->rnaprop, &item_array, NULL, &free);
 
-  /* we dont want nested rows, cols in menus */
+  /* We don't want nested rows, cols in menus. */
   UI_block_layout_set_current(block, layout);
 
   int totitems = 0;
@@ -6112,6 +6143,7 @@ void UI_but_drag_set_asset(uiBut *but,
                            const char *name,
                            const char *path,
                            int id_type,
+                           int import_type,
                            int icon,
                            struct ImBuf *imb,
                            float scale)
@@ -6121,6 +6153,7 @@ void UI_but_drag_set_asset(uiBut *but,
   BLI_strncpy(asset_drag->name, name, sizeof(asset_drag->name));
   asset_drag->path = path;
   asset_drag->id_type = id_type;
+  asset_drag->import_type = import_type;
 
   but->dragtype = WM_DRAG_ASSET;
   ui_def_but_icon(but, icon, 0); /* no flag UI_HAS_ICON, so icon doesn't draw in button */
@@ -6576,6 +6609,8 @@ uiBut *uiDefSearchBut(uiBlock *block,
  * \param search_create_fn: Function to create the menu.
  * \param search_update_fn: Function to refresh search content after the search text has changed.
  * \param arg: user value.
+ * \param free_arg: Set to true if the argument is newly allocated memory for every redraw and
+ * should be freed when the button is destroyed.
  * \param search_arg_free_fn: When non-null, use this function to free \a arg.
  * \param search_exec_fn: Function that executes the action, gets \a arg as the first argument.
  * The second argument as the active item-pointer
@@ -6586,6 +6621,7 @@ void UI_but_func_search_set(uiBut *but,
                             uiButSearchCreateFn search_create_fn,
                             uiButSearchUpdateFn search_update_fn,
                             void *arg,
+                            const bool free_arg,
                             uiButSearchArgFreeFn search_arg_free_fn,
                             uiButHandleFunc search_exec_fn,
                             void *active)
@@ -6621,11 +6657,17 @@ void UI_but_func_search_set(uiBut *but,
     }
 #endif
     /* Handling will pass the active item as arg2 later, so keep it NULL here. */
-    UI_but_func_set(but, search_exec_fn, search_but->arg, NULL);
+    if (free_arg) {
+      UI_but_funcN_set(but, search_exec_fn, search_but->arg, NULL);
+    }
+    else {
+      UI_but_func_set(but, search_exec_fn, search_but->arg, NULL);
+    }
   }
 
-  /* search buttons show red-alert if item doesn't exist, not for menus */
-  if (0 == (but->block->flag & UI_BLOCK_LOOP)) {
+  /* search buttons show red-alert if item doesn't exist, not for menus. Don't do this for
+   * buttons where any result is valid anyway, since any string will be valid anyway. */
+  if (0 == (but->block->flag & UI_BLOCK_LOOP) && !search_but->results_are_suggestions) {
     /* skip empty buttons, not all buttons need input, we only show invalid */
     if (but->drawstr[0]) {
       ui_but_search_refresh(search_but);
@@ -6765,6 +6807,7 @@ uiBut *uiDefSearchButO_ptr(uiBlock *block,
                          ui_searchbox_create_generic,
                          operator_enum_search_update_fn,
                          but,
+                         false,
                          NULL,
                          operator_enum_search_exec_fn,
                          NULL);
